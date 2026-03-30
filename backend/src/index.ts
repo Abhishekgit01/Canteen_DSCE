@@ -8,7 +8,7 @@ import mongoose from 'mongoose';
 import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
-import userRoutes from './routes/users.js';
+import userRoutes from './routes/admin.js';
 import { setupSocket } from './socket/index.js';
 
 dotenv.config();
