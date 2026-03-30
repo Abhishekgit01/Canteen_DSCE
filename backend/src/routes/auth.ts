@@ -74,7 +74,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
 router.post('/resend-otp', async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+passwordHash');
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.isVerified) return res.status(400).json({ error: 'User already verified' });
 
@@ -91,7 +91,7 @@ router.post('/resend-otp', async (req: Request, res: Response) => {
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+passwordHash');
     if (!user || !user.isVerified) return res.status(401).json({ error: 'Invalid credentials' });
 
     const isValid = await bcrypt.compare(password, user.passwordHash);
