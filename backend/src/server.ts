@@ -2,8 +2,10 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import app from './app.js';
 import dotenv from 'dotenv';
+import { User, MenuItem } from './models/index.js';
 
 dotenv.config();
 
@@ -90,8 +92,23 @@ app.get('/', (_req, res) => {
 
 // Connect to MongoDB and start server
 mongoose.connect(MONGO_URI)
-  .then(() => {
+  .then(async () => {
     console.log('📦 Connected to MongoDB');
+    
+    // Auto-seed if no users exist
+    const userCount = await User.countDocuments();
+    if (userCount === 0) {
+      console.log('🌱 Seeding database...');
+      const salt = await bcrypt.genSalt(12);
+      await User.create([
+        { email: 'admin@dsce.edu.in', passwordHash: await bcrypt.hash('Admin@123', salt), usn: 'ADMIN001', role: 'admin', isVerified: true },
+        { email: 'manager@dsce.edu.in', passwordHash: await bcrypt.hash('Manager@123', salt), usn: 'MGR001', role: 'manager', isVerified: true },
+        { email: 'staff@dsce.edu.in', passwordHash: await bcrypt.hash('Staff@123', salt), usn: 'STAFF001', role: 'staff', isVerified: true },
+        { email: 'test@dsce.edu.in', passwordHash: await bcrypt.hash('Test@123', salt), usn: '1DS22CS001', role: 'student', isVerified: true }
+      ]);
+      console.log('✅ Users seeded');
+    }
+    
     httpServer.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`🔌 Socket.io ready for real-time connections`);
