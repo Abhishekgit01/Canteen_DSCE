@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User, OTP } from '../models/index.js';
-import { generateOTP, sendOTPEmail } from '../utils/email.js';
+import { generateOTP, isEmailConfigured, sendOTPEmail } from '../utils/email.js';
 import { lookupStudentByUsn, normalizeUsn } from '../services/student-registry.service.js';
 
 const router = Router();
@@ -33,18 +33,40 @@ router.post('/signup', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Please enter a valid email address' });
     }
 
-    const existingUser = await User.findOne({ $or: [{ email: normalizedEmail }, { usn: resolvedUsn }] });
-    if (existingUser) {
+    const passwordHash = await bcrypt.hash(password, 12);
+    const existingUser = await User.findOne({ $or: [{ email: normalizedEmail }, { usn: resolvedUsn }] }).select(
+      '+passwordHash',
+    );
+
+    if (existingUser?.isVerified) {
       return res.status(400).json({ error: 'User already exists' });
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
-    const user = new User({ name: resolvedName, usn: resolvedUsn, email: normalizedEmail, passwordHash });
-    await user.save();
+    if (existingUser) {
+      existingUser.name = resolvedName;
+      existingUser.usn = resolvedUsn;
+      existingUser.email = normalizedEmail;
+      existingUser.passwordHash = passwordHash;
+      await existingUser.save();
+    } else {
+      const user = new User({ name: resolvedName, usn: resolvedUsn, email: normalizedEmail, passwordHash });
+      await user.save();
+    }
 
     const otp = generateOTP();
+    await OTP.deleteMany({ email: normalizedEmail });
     await OTP.create({ email: normalizedEmail, code: otp, expiresAt: new Date(Date.now() + 10 * 60 * 1000) });
-    await sendOTPEmail(normalizedEmail, otp);
+
+    try {
+      await sendOTPEmail(normalizedEmail, otp);
+    } catch (error) {
+      console.error('OTP delivery error:', error);
+      return res.status(503).json({
+        error: isEmailConfigured()
+          ? 'OTP delivery is taking too long. Please try again in a moment.'
+          : 'OTP email service is not configured on the backend. Add EMAIL_USER and EMAIL_PASS in Render.',
+      });
+    }
 
     res.json({
       message: 'OTP sent',
@@ -112,8 +134,20 @@ router.post('/resend-otp', async (req: Request, res: Response) => {
     if (user.isVerified) return res.status(400).json({ error: 'User already verified' });
 
     const otp = generateOTP();
+    await OTP.deleteMany({ email: normalizedEmail });
     await OTP.create({ email: normalizedEmail, code: otp, expiresAt: new Date(Date.now() + 10 * 60 * 1000) });
-    await sendOTPEmail(normalizedEmail, otp);
+
+    try {
+      await sendOTPEmail(normalizedEmail, otp);
+    } catch (error) {
+      console.error('OTP resend error:', error);
+      return res.status(503).json({
+        error: isEmailConfigured()
+          ? 'OTP delivery is taking too long. Please try again in a moment.'
+          : 'OTP email service is not configured on the backend. Add EMAIL_USER and EMAIL_PASS in Render.',
+      });
+    }
+
     res.json({ message: 'OTP resent' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to resend OTP' });

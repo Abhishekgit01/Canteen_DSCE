@@ -1,18 +1,30 @@
 import nodemailer from 'nodemailer';
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const getTransporter = () =>
+  nodemailer.createTransport({
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: Number(process.env.EMAIL_PORT || 587),
+    secure: Number(process.env.EMAIL_PORT || 587) === 465,
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
+  });
+
+export const isEmailConfigured = (): boolean => Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 
 export const generateOTP = (): string => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
 export const sendOTPEmail = async (email: string, otp: string): Promise<void> => {
+  if (!isEmailConfigured()) {
+    throw new Error('OTP email service is not configured');
+  }
+
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
@@ -30,5 +42,5 @@ export const sendOTPEmail = async (email: string, otp: string): Promise<void> =>
     `,
   };
 
-  await transporter.sendMail(mailOptions);
+  await getTransporter().sendMail(mailOptions);
 };
