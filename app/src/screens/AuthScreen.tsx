@@ -97,11 +97,13 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
   };
 
   const handleSignup = async () => {
-    if (!normalizedSignupUsn || !email || !password) {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedSignupUsn || !normalizedEmail || !password) {
       setError('Please fill all fields');
       return;
     }
-    if (!emailPattern.test(email)) {
+    if (!emailPattern.test(normalizedEmail)) {
       setError('Please enter a valid email address');
       return;
     }
@@ -114,13 +116,21 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
     setLoading(true);
     setError('');
     try {
-      await authApi.signup({
+      const response = await authApi.signup({
         usn: normalizedSignupUsn,
-        email,
+        email: normalizedEmail,
         password,
         name: studentName ? undefined : manualName.trim(),
       });
-      navigation.navigate('Otp', { email });
+
+      if (response.data.verificationRequired === false) {
+        const { user, token } = response.data;
+        await setAuth(user, token);
+        navigation.replace('Main');
+        return;
+      }
+
+      navigation.navigate('Otp', { email: normalizedEmail });
     } catch (err: any) {
       setError(err.response?.data?.error || err.userMessage || API_CONFIG_ERROR || 'Signup failed');
     } finally {

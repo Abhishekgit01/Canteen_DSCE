@@ -8,6 +8,56 @@ import { lookupStudentByUsn, normalizeUsn } from '../services/student-registry.s
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+type AuthVerificationMode = 'auto' | 'email' | 'none';
+
+const getAuthVerificationMode = (): AuthVerificationMode => {
+  const value = String(process.env.AUTH_VERIFICATION_MODE || 'auto')
+    .trim()
+    .toLowerCase();
+
+  if (value === 'email' || value === 'none') {
+    return value;
+  }
+
+  return 'auto';
+};
+
+const shouldUseOtpVerification = (): boolean => {
+  const mode = getAuthVerificationMode();
+
+  if (mode === 'none') {
+    return false;
+  }
+
+  if (mode === 'email') {
+    return true;
+  }
+
+  return isEmailConfigured();
+};
+
+const createAuthResponse = (user: {
+  _id: unknown;
+  usn: string;
+  email: string;
+  name: string;
+  role: string;
+  isVerified: boolean;
+}) => {
+  const token = jwt.sign({ id: user._id, usn: user.usn, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+
+  return {
+    user: {
+      id: String(user._id),
+      usn: user.usn,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      isVerified: user.isVerified,
+    },
+    token,
+  };
+};
 
 // Signup
 router.post('/signup', async (req: Request, res: Response) => {
@@ -37,20 +87,46 @@ router.post('/signup', async (req: Request, res: Response) => {
     const existingUser = await User.findOne({ $or: [{ email: normalizedEmail }, { usn: resolvedUsn }] }).select(
       '+passwordHash',
     );
+    const verificationMode = getAuthVerificationMode();
 
     if (existingUser?.isVerified) {
       return res.status(400).json({ error: 'User already exists' });
     }
+
+    let user = existingUser;
 
     if (existingUser) {
       existingUser.name = resolvedName;
       existingUser.usn = resolvedUsn;
       existingUser.email = normalizedEmail;
       existingUser.passwordHash = passwordHash;
+      existingUser.isVerified = false;
       await existingUser.save();
     } else {
-      const user = new User({ name: resolvedName, usn: resolvedUsn, email: normalizedEmail, passwordHash });
+      user = new User({
+        name: resolvedName,
+        usn: resolvedUsn,
+        email: normalizedEmail,
+        passwordHash,
+        isVerified: false,
+      });
       await user.save();
+    }
+
+    if (!user) {
+      return res.status(500).json({ error: 'Signup failed' });
+    }
+
+    if (!shouldUseOtpVerification()) {
+      await OTP.deleteMany({ email: normalizedEmail });
+      user.isVerified = true;
+      await user.save();
+
+      return res.json({
+        verificationRequired: false,
+        message: 'Signup complete',
+        ...createAuthResponse(user),
+      });
     }
 
     const otp = generateOTP();
@@ -61,6 +137,19 @@ router.post('/signup', async (req: Request, res: Response) => {
       await sendOTPEmail(normalizedEmail, otp);
     } catch (error) {
       console.error('OTP delivery error:', error);
+
+      if (verificationMode === 'auto') {
+        await OTP.deleteMany({ email: normalizedEmail });
+        user.isVerified = true;
+        await user.save();
+
+        return res.json({
+          verificationRequired: false,
+          message: 'Signup complete. Email verification is temporarily unavailable, so your account was verified automatically.',
+          ...createAuthResponse(user),
+        });
+      }
+
       return res.status(503).json({
         error: isEmailConfigured()
           ? 'OTP delivery is taking too long. Please try again in a moment.'
@@ -69,6 +158,7 @@ router.post('/signup', async (req: Request, res: Response) => {
     }
 
     res.json({
+      verificationRequired: true,
       message: 'OTP sent',
       student: { usn: resolvedUsn, name: resolvedName, source: student ? 'roster' : 'manual' },
     });
@@ -91,6 +181,10 @@ router.get('/student/:usn', async (req: Request, res: Response) => {
 // Verify OTP
 router.post('/verify-otp', async (req: Request, res: Response) => {
   try {
+    if (!shouldUseOtpVerification()) {
+      return res.status(403).json({ error: 'OTP verification is currently disabled on this backend' });
+    }
+
     const { email, code } = req.body;
     const normalizedEmail = String(email || '').trim().toLowerCase();
 
@@ -112,14 +206,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
     }
 
     await OTP.deleteMany({ email: normalizedEmail });
-
-    const token = jwt.sign(
-      { id: user._id, usn: user.usn, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.json({ user: { id: user._id, usn: user.usn, email: user.email, name: user.name, role: user.role, isVerified: user.isVerified }, token });
+    res.json(createAuthResponse(user));
   } catch (error) {
     res.status(500).json({ error: 'Verification failed' });
   }
@@ -128,6 +215,10 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
 // Resend OTP
 router.post('/resend-otp', async (req: Request, res: Response) => {
   try {
+    if (!shouldUseOtpVerification()) {
+      return res.status(403).json({ error: 'OTP verification is currently disabled on this backend' });
+    }
+
     const normalizedEmail = String(req.body.email || '').trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash');
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -165,8 +256,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign({ id: user._id, usn: user.usn, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: { id: user._id, usn: user.usn, email: user.email, name: user.name, role: user.role, isVerified: user.isVerified }, token });
+    res.json(createAuthResponse(user));
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Login failed', details: String(error) });

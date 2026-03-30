@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { NativeModules, Platform } from 'react-native';
 import { useAuthStore } from '../stores/authStore';
-import type { PaymentInitResponse, PaymentMode } from '../types';
+import type { PaymentInitResponse, PaymentMode, User } from '../types';
 
 const normalizeOrigin = (value?: string | null): string | null => {
   if (!value) {
@@ -82,17 +82,37 @@ api.interceptors.response.use(
 
 export default api;
 
+type AuthResponse = {
+  user: User;
+  token: string;
+};
+
+type SignupResponse =
+  | {
+      verificationRequired: true;
+      message: string;
+      student: {
+        usn: string;
+        name: string;
+        source: 'roster' | 'manual';
+      };
+    }
+  | ({
+      verificationRequired: false;
+      message: string;
+    } & AuthResponse);
+
 export const authApi = {
   lookupStudent: (usn: string) =>
     api.get<{ usn: string; name: string }>(`/auth/student/${encodeURIComponent(usn)}`),
   signup: (data: { usn: string; email: string; password: string; name?: string }) =>
-    api.post('/auth/signup', data),
+    api.post<SignupResponse>('/auth/signup', data),
   verifyOtp: (data: { email: string; code: string }) =>
-    api.post('/auth/verify-otp', data),
+    api.post<AuthResponse>('/auth/verify-otp', data),
   resendOtp: (data: { email: string }) =>
     api.post('/auth/resend-otp', data),
   login: (data: { usn: string; password: string }) =>
-    api.post('/auth/login', data),
+    api.post<AuthResponse>('/auth/login', data),
 };
 
 export const menuApi = {
