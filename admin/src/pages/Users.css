@@ -1,0 +1,19 @@
+.users-page .filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.role-select {
+  padding: 6px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.role-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
