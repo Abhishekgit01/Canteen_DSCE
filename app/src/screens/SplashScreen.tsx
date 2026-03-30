@@ -1,32 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { useAuthStore } from '../stores/authStore';
-import { useCartStore } from '../stores/cartStore';
-import { connectSocket } from '../api/socket';
 
-export default function SplashScreen({ navigation }: any) {
-  const { loadAuth, token, user, isLoading } = useAuthStore();
-  const { loadCart } = useCartStore();
-
-  useEffect(() => {
-    const init = async () => {
-      await loadAuth();
-      await loadCart();
-    };
-    init();
-  }, []);
-
-  useEffect(() => {
-    if (!isLoading) {
-      if (token && user) {
-        connectSocket(token);
-        navigation.replace('Main');
-      } else {
-        navigation.replace('Auth');
-      }
-    }
-  }, [isLoading, token, user]);
-
+export default function SplashScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.logo}>DSCE</Text>

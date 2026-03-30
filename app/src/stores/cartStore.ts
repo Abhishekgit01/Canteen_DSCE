@@ -46,9 +46,16 @@ export const useCartStore = create<CartState>((set, get) => ({
     set({ items: [] });
   },
   loadCart: async () => {
-    const cartStr = await AsyncStorage.getItem('cart');
-    if (cartStr) {
-      set({ items: JSON.parse(cartStr) });
+    try {
+      const cartStr = await AsyncStorage.getItem('cart');
+      if (cartStr) {
+        set({ items: JSON.parse(cartStr) });
+        return;
+      }
+      set({ items: [] });
+    } catch {
+      await AsyncStorage.removeItem('cart');
+      set({ items: [] });
     }
   },
   total: () => {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -16,7 +16,9 @@ import OrderSuccessScreen from './screens/OrderSuccessScreen';
 import OrdersScreen from './screens/OrdersScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ScannerScreen from './screens/ScannerScreen';
+import { connectSocket, disconnectSocket } from './api/socket';
 import { useAuthStore } from './stores/authStore';
+import { useCartStore } from './stores/cartStore';
 import { MainTabParamList, RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -63,23 +65,49 @@ function MainTabs() {
 }
 
 export default function Navigation() {
-  const { isLoading } = useAuthStore();
+  const { loadAuth, token, user, isLoading } = useAuthStore();
+  const { loadCart } = useCartStore();
+
+  useEffect(() => {
+    const initializeApp = async () => {
+      await loadAuth();
+      await loadCart();
+    };
+
+    void initializeApp();
+  }, [loadAuth, loadCart]);
+
+  useEffect(() => {
+    if (token && user) {
+      connectSocket(token);
+      return undefined;
+    }
+
+    disconnectSocket();
+    return undefined;
+  }, [token, user]);
 
   if (isLoading) {
-    return null;
+    return <SplashScreen />;
   }
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Splash" component={SplashScreen} />
-        <Stack.Screen name="Auth" component={AuthScreen} />
-        <Stack.Screen name="Otp" component={OtpScreen} />
-        <Stack.Screen name="Main" component={MainTabs} />
-        <Stack.Screen name="ItemDetail" component={ItemDetailScreen} />
-        <Stack.Screen name="Payment" component={PaymentScreen} />
-        <Stack.Screen name="OrderQR" component={OrderQRScreen} />
-        <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />
+        {token && user ? (
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="ItemDetail" component={ItemDetailScreen} />
+            <Stack.Screen name="Payment" component={PaymentScreen} />
+            <Stack.Screen name="OrderQR" component={OrderQRScreen} />
+            <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />
+          </>
+        ) : (
+          <>
+            <Stack.Screen name="Auth" component={AuthScreen} />
+            <Stack.Screen name="Otp" component={OtpScreen} />
+          </>
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );

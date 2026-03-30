@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { orderApi } from '../api';
+import { PaymentMode } from '../types';
 
 const { width } = Dimensions.get('window');
 const SCAN_AREA = width * 0.6;
@@ -15,6 +16,7 @@ const SCAN_AREA = width * 0.6;
 export default function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(true);
+  const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
   const [result, setResult] = useState<{ type: 'success' | 'error'; message: string; name?: string } | null>(null);
 
   useEffect(() => {
@@ -22,6 +24,16 @@ export default function ScannerScreen() {
       requestPermission();
     }
   }, [permission]);
+
+  useEffect(() => {
+    orderApi.getPaymentConfig()
+      .then((response) => {
+        setPaymentMode(response.data.mode);
+      })
+      .catch(() => {
+        setPaymentMode(null);
+      });
+  }, []);
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     if (!scanning) return;
@@ -82,6 +94,14 @@ export default function ScannerScreen() {
           {result.name && <Text style={styles.resultName}>{result.name}</Text>}
         </View>
       )}
+
+      {paymentMode === 'upi_link' ? (
+        <View style={styles.noteContainer}>
+          <Text style={styles.noteText}>
+            Verify UPI payment in canteen PhonePe/GPay before scanning
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -154,5 +174,23 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     color: '#ffffff',
     fontWeight: '600',
+  },
+  noteContainer: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 28,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(10, 15, 30, 0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(249, 115, 22, 0.28)',
+  },
+  noteText: {
+    color: '#f8fafc',
+    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

@@ -5,15 +5,22 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { orderApi } from '../api';
 import { MainTabNavigationProp, Order } from '../types';
 
+function getErrorMessage(error: any) {
+  return error?.response?.data?.error || 'Could not open this order right now.';
+}
+
 export default function OrdersScreen() {
   const navigation = useNavigation<MainTabNavigationProp<'Orders'>>();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openingOrderId, setOpeningOrderId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     fetchOrders();
@@ -21,10 +28,12 @@ export default function OrdersScreen() {
 
   const fetchOrders = async () => {
     try {
+      setErrorMessage('');
       const response = await orderApi.getMyOrders();
       setOrders(response.data);
     } catch (error) {
       console.error('Failed to fetch orders:', error);
+      setErrorMessage(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -36,18 +45,40 @@ export default function OrdersScreen() {
       case 'preparing': return '#f97316';
       case 'ready': return '#3b82f6';
       case 'fulfilled': return '#10b981';
+      case 'failed': return '#ef4444';
       default: return '#8892a4';
+    }
+  };
+
+  const handleOrderPress = async (order: Order) => {
+    if (!['paid', 'preparing', 'ready'].includes(order.status)) {
+      return;
+    }
+
+    setOpeningOrderId(order.id);
+    setErrorMessage('');
+
+    try {
+      const response = await orderApi.getOrder(order.id);
+      if (response.data?.qrToken) {
+        navigation.navigate('OrderQR', {
+          orderId: order.id,
+          qrToken: response.data.qrToken,
+        });
+      } else {
+        setErrorMessage('QR code is not ready yet for this order.');
+      }
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setOpeningOrderId(null);
     }
   };
 
   const renderItem = ({ item }: { item: Order }) => (
     <TouchableOpacity
       style={styles.orderCard}
-      onPress={() => {
-        if ((item.status === 'paid' || item.status === 'preparing') && item.qrToken) {
-          navigation.navigate('OrderQR', { orderId: item.id, qrToken: item.qrToken });
-        }
-      }}
+      onPress={() => handleOrderPress(item)}
     >
       <View style={styles.orderHeader}>
         <Text style={styles.orderId}>Order #{item.id.slice(-6)}</Text>
@@ -61,6 +92,12 @@ export default function OrdersScreen() {
       <Text style={styles.orderItems}>
         {item.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}
       </Text>
+      {openingOrderId === item.id ? (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator color="#f97316" size="small" />
+          <Text style={styles.loadingText}>Opening QR...</Text>
+        </View>
+      ) : null}
       <Text style={styles.orderTotal}>₹{item.totalAmount}</Text>
     </TouchableOpacity>
   );
@@ -70,6 +107,8 @@ export default function OrdersScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>My Orders</Text>
       </View>
+
+      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
       <FlatList
         data={orders}
@@ -99,6 +138,11 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: 16,
+  },
+  errorText: {
+    color: '#fda4af',
+    paddingHorizontal: 16,
+    marginBottom: 8,
   },
   orderCard: {
     backgroundColor: '#141929',
@@ -136,6 +180,16 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     marginBottom: 8,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  loadingText: {
+    color: '#f8fafc',
+    fontSize: 12,
   },
   orderTotal: {
     color: '#f97316',

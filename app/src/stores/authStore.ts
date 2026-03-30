@@ -32,7 +32,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (token && userStr) {
         const user = JSON.parse(userStr);
         set({ user, token });
+        return;
       }
+      set({ user: null, token: null });
+    } catch {
+      await AsyncStorage.multiRemove(['token', 'user']);
+      set({ user: null, token: null });
     } finally {
       set({ isLoading: false });
     }

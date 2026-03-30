@@ -41,17 +41,51 @@ export interface Order {
   items: {
     menuItemId: string;
     name: string;
+    price?: number;
     quantity: number;
     tempPreference: string;
   }[];
   scheduledTime: string;
   totalAmount: number;
+  paymentMethod?: string;
   razorpayOrderId?: string;
   razorpayPaymentId?: string;
-  status: 'pending_payment' | 'paid' | 'preparing' | 'ready' | 'fulfilled';
+  upiTransactionId?: string;
+  status: 'pending_payment' | 'paid' | 'preparing' | 'ready' | 'fulfilled' | 'failed';
   qrToken?: string;
   createdAt: string;
 }
+
+export type PaymentMode = 'mock' | 'upi_link' | 'razorpay';
+
+type PaymentInitBase = {
+  mode: PaymentMode;
+  orderId: string;
+  amount: number;
+};
+
+export type MockPaymentInitResponse = PaymentInitBase & {
+  mode: 'mock';
+  transactionId: string;
+};
+
+export type UpiLinkPaymentInitResponse = PaymentInitBase & {
+  mode: 'upi_link';
+  upiUri: string;
+  canteenUpiId: string;
+  canteenName?: string;
+};
+
+export type RazorpayPaymentInitResponse = PaymentInitBase & {
+  mode: 'razorpay';
+  razorpayOrderId: string;
+  key: string;
+};
+
+export type PaymentInitResponse =
+  | MockPaymentInitResponse
+  | UpiLinkPaymentInitResponse
+  | RazorpayPaymentInitResponse;
 
 export type MainTabParamList = {
   Home: undefined;
@@ -67,7 +101,7 @@ export type RootStackParamList = {
   Otp: { email: string };
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
   ItemDetail: { item: MenuItem };
-  Payment: { amount: number };
+  Payment: PaymentInitResponse;
   OrderQR: { orderId: string; qrToken: string };
   OrderSuccess: { orderId: string };
 };

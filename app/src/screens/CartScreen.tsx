@@ -1,14 +1,55 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { MainTabNavigationProp } from '../types';
 import { useCartStore } from '../stores/cartStore';
-import { useAuthStore } from '../stores/authStore';
+import { orderApi } from '../api';
+
+function getErrorMessage(error: any) {
+  return error?.response?.data?.error || 'Could not create your order. Please try again.';
+}
 
 export default function CartScreen() {
   const navigation = useNavigation<MainTabNavigationProp<'Cart'>>();
-  const { items, updateQuantity, removeItem, total, clearCart } = useCartStore();
-  const { user } = useAuthStore();
+  const { items, updateQuantity, total } = useCartStore();
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const subtotal = total();
+
+  const handleCreateOrder = async () => {
+    if (items.length === 0 || isCreatingOrder) {
+      return;
+    }
+
+    setIsCreatingOrder(true);
+    setErrorMessage('');
+
+    try {
+      const response = await orderApi.createOrder({
+        items: items.map((item) => ({
+          menuItemId: item.menuItem.id,
+          quantity: item.quantity,
+          tempPreference: item.tempPreference,
+        })),
+        scheduledTime: items[0]?.scheduledTime || '',
+      });
+
+      navigation.navigate('Payment', response.data);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsCreatingOrder(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -50,24 +91,32 @@ export default function CartScreen() {
         <View style={styles.summary}>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Subtotal</Text>
-            <Text style={styles.summaryValue}>₹{total()}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Service Fee</Text>
-            <Text style={styles.summaryValue}>₹5</Text>
+            <Text style={styles.summaryValue}>₹{subtotal}</Text>
           </View>
           <View style={[styles.summaryRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>₹{total() + 5}</Text>
+            <Text style={styles.totalValue}>₹{subtotal}</Text>
           </View>
         </View>
 
+        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
         <TouchableOpacity
-          style={[styles.payButton, items.length === 0 && styles.payButtonDisabled]}
-          disabled={items.length === 0}
-          onPress={() => navigation.navigate('Payment', { amount: total() + 5 })}
+          style={[
+            styles.payButton,
+            (items.length === 0 || isCreatingOrder) && styles.payButtonDisabled,
+          ]}
+          disabled={items.length === 0 || isCreatingOrder}
+          onPress={handleCreateOrder}
         >
-          <Text style={styles.payButtonText}>Proceed to Pay</Text>
+          {isCreatingOrder ? (
+            <View style={styles.payButtonLoading}>
+              <ActivityIndicator color="#ffffff" size="small" />
+              <Text style={styles.payButtonText}>Creating order...</Text>
+            </View>
+          ) : (
+            <Text style={styles.payButtonText}>Proceed to Pay</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -201,9 +250,19 @@ const styles = StyleSheet.create({
   payButtonDisabled: {
     opacity: 0.5,
   },
+  payButtonLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   payButtonText: {
     color: '#ffffff',
     fontWeight: '700',
     fontSize: 16,
+  },
+  errorText: {
+    color: '#fda4af',
+    marginBottom: 12,
+    textAlign: 'center',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,62 +9,120 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { authApi } from '../api';
+import { API_CONFIG_ERROR, authApi } from '../api';
 import { useAuthStore } from '../stores/authStore';
 import { RootStackScreenProps } from '../types';
 
 export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>) {
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const usnPattern = /^[1-9][A-Z]{2}\d{2}[A-Z]{2}\d{3}$/;
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
   // Login fields
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginUsn, setLoginUsn] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   
   // Signup fields
-  const [name, setName] = useState('');
   const [usn, setUsn] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [studentName, setStudentName] = useState('');
+  const [manualName, setManualName] = useState('');
+  const [isLookingUpUsn, setIsLookingUpUsn] = useState(false);
+  const [usnLookupError, setUsnLookupError] = useState('');
 
   const { setAuth } = useAuthStore();
+  const normalizedSignupUsn = useMemo(() => usn.trim().toUpperCase().replace(/\s+/g, ''), [usn]);
+
+  useEffect(() => {
+    setStudentName('');
+    setManualName('');
+    setUsnLookupError('');
+
+    if (!usnPattern.test(normalizedSignupUsn)) {
+      setIsLookingUpUsn(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLookingUpUsn(true);
+
+    authApi.lookupStudent(normalizedSignupUsn)
+      .then((response) => {
+        if (!cancelled) {
+          setStudentName(response.data.name);
+        }
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          const lookupError =
+            err.response?.status === 404
+              ? err.response?.data?.error || 'USN not found in the imported roster'
+              : 'Could not reach the server. Check that the backend is running and reachable.';
+          setUsnLookupError(lookupError);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLookingUpUsn(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [normalizedSignupUsn]);
 
   const handleLogin = async () => {
-    if (!loginEmail || !loginPassword) {
+    const normalizedLoginUsn = loginUsn.trim().toUpperCase().replace(/\s+/g, '');
+
+    if (!normalizedLoginUsn || !loginPassword) {
       setError('Please fill all fields');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      const response = await authApi.login({ email: loginEmail, password: loginPassword });
+      const response = await authApi.login({ usn: normalizedLoginUsn, password: loginPassword });
       const { user, token } = response.data;
       await setAuth(user, token);
       navigation.replace('Main');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed');
+      setError(err.response?.data?.error || err.userMessage || API_CONFIG_ERROR || 'Login failed');
     } finally {
       setLoading(false);
     }
   };
 
   const handleSignup = async () => {
-    if (!name || !usn || !email || !password) {
+    if (!normalizedSignupUsn || !email || !password) {
       setError('Please fill all fields');
       return;
     }
-    if (!email.endsWith('@dsce.edu.in')) {
-      setError('Email must end with @dsce.edu.in');
+    if (!emailPattern.test(email)) {
+      setError('Please enter a valid email address');
       return;
+    }
+    if (!studentName) {
+      if (!manualName.trim()) {
+        setError(usnLookupError || 'Enter your name to continue');
+        return;
+      }
     }
     setLoading(true);
     setError('');
     try {
-      await authApi.signup({ name, usn, email, password });
+      await authApi.signup({
+        usn: normalizedSignupUsn,
+        email,
+        password,
+        name: studentName ? undefined : manualName.trim(),
+      });
       navigation.navigate('Otp', { email });
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Signup failed');
+      setError(err.response?.data?.error || err.userMessage || API_CONFIG_ERROR || 'Signup failed');
     } finally {
       setLoading(false);
     }
@@ -100,12 +158,11 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
           <View style={styles.form}>
             <TextInput
               style={styles.input}
-              placeholder="Email"
+              placeholder="USN"
               placeholderTextColor="#8892a4"
-              value={loginEmail}
-              onChangeText={setLoginEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
+              value={loginUsn}
+              onChangeText={(value) => setLoginUsn(value.toUpperCase())}
+              autoCapitalize="characters"
             />
             <TextInput
               style={styles.input}
@@ -127,22 +184,33 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
           <View style={styles.form}>
             <TextInput
               style={styles.input}
-              placeholder="Full Name"
-              placeholderTextColor="#8892a4"
-              value={name}
-              onChangeText={setName}
-            />
-            <TextInput
-              style={styles.input}
               placeholder="USN"
               placeholderTextColor="#8892a4"
               value={usn}
-              onChangeText={setUsn}
+              onChangeText={(value) => setUsn(value.toUpperCase())}
               autoCapitalize="characters"
             />
+            <View style={styles.lookupCard}>
+              <Text style={styles.lookupLabel}>Name from DSCE records</Text>
+              <Text style={styles.lookupValue}>
+                {isLookingUpUsn
+                  ? 'Looking up your name...'
+                  : studentName || 'If your USN is missing here, enter your name below'}
+              </Text>
+              {usnLookupError ? <Text style={styles.lookupError}>{usnLookupError}</Text> : null}
+            </View>
+            {!studentName && !isLookingUpUsn ? (
+              <TextInput
+                style={styles.input}
+                placeholder="Full Name"
+                placeholderTextColor="#8892a4"
+                value={manualName}
+                onChangeText={setManualName}
+              />
+            ) : null}
             <TextInput
               style={styles.input}
-              placeholder="College Email"
+              placeholder="Email"
               placeholderTextColor="#8892a4"
               value={email}
               onChangeText={setEmail}
@@ -217,6 +285,27 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 16,
+  },
+  lookupCard: {
+    backgroundColor: '#141929',
+    borderRadius: 12,
+    padding: 16,
+    gap: 6,
+  },
+  lookupLabel: {
+    color: '#8892a4',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  lookupValue: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  lookupError: {
+    color: '#ef4444',
+    fontSize: 13,
   },
   input: {
     backgroundColor: '#141929',

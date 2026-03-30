@@ -6,8 +6,6 @@ import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
 import dotenv from 'dotenv';
 import webhookRoutes from './routes/webhook.js';
-import mockPaymentRoutes from './routes/mockPayment.js';
-import paytmRoutes from './routes/paytm.js';
 import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
@@ -67,20 +65,7 @@ app.use(cors({
 // app.use('/api/auth/login', loginLimiter);
 
 // WEBHOOK ROUTE - MUST be before express.json()
-// Use raw body for signature verification
-app.use('/api/orders/webhook', express.raw({ type: 'application/json' }), (req, res, next) => {
-  // Store raw body for webhook verification
-  (req as any).rawBody = req.body;
-  // Parse JSON for the route handler
-  if (req.body && Buffer.isBuffer(req.body)) {
-    try {
-      req.body = JSON.parse(req.body.toString());
-    } catch {
-      // Keep as buffer if not valid JSON
-    }
-  }
-  next();
-}, webhookRoutes);
+app.use('/api/orders/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
 
 // 6. JSON body parser with size limit
 app.use(express.json({ limit: '10kb' }));
@@ -138,9 +123,6 @@ app.get('/', (_req, res) => {
 });
 
 // Routes
-app.use('/webhook', webhookRoutes);
-app.use('/paytm', paytmRoutes);
-app.use('/payment/mock', mockPaymentRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/orders', orderRoutes);

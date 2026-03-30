@@ -1,96 +1,65 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
 import { Order } from '../models/index.js';
 import { io } from '../server.js';
+import { finalizePaidOrder } from '../services/order-payment.service.js';
+import { serializeOrder } from '../utils/order.utils.js';
+import { getPaymentMode } from '../utils/paymentMode.js';
 
 const router = Router();
-const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || '';
-const QR_SECRET = process.env.QR_SECRET || 'qr-secret-key';
 
-// Razorpay webhook - MUST be mounted BEFORE express.json() middleware in main app
-// This route handles raw body for signature verification
 router.post('/razorpay', async (req: Request, res: Response) => {
   try {
-    const signature = req.headers['x-razorpay-signature'] as string;
-    const body = (req as any).rawBody || req.body;
-
-    if (!signature || !RAZORPAY_WEBHOOK_SECRET) {
-      console.error('Webhook: Missing signature or secret');
-      return res.status(400).send('Missing signature');
+    if (getPaymentMode() !== 'razorpay') {
+      return res.status(403).json({ error: 'Razorpay webhook is inactive' });
     }
 
-    // Verify HMAC signature using crypto.timingSafeEqual
+    const signature = req.headers['x-razorpay-signature'];
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
+    const rawBody = req.body;
+
+    if (typeof signature !== 'string' || !secret || !Buffer.isBuffer(rawBody)) {
+      return res.status(400).send('Invalid webhook request');
+    }
+
     const expectedSignature = crypto
-      .createHmac('sha256', RAZORPAY_WEBHOOK_SECRET)
-      .update(body)
+      .createHmac('sha256', secret)
+      .update(rawBody)
       .digest('hex');
 
-    const sigBuf = Buffer.from(signature, 'hex');
-    const expectedBuf = Buffer.from(expectedSignature, 'hex');
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expectedSignature);
 
-    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
-      console.error('Webhook: Invalid signature', {
-        ip: req.ip,
-        timestamp: new Date().toISOString(),
-        body: body.toString().slice(0, 200),
-      });
+    if (
+      signatureBuffer.length !== expectedBuffer.length ||
+      !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+    ) {
       return res.status(400).send('Invalid signature');
     }
 
-    // Parse JSON after verification
-    const event = JSON.parse(body.toString());
-    console.log('Webhook event:', event.event);
+    const event = JSON.parse(rawBody.toString('utf8'));
 
-    // Handle payment.captured
     if (event.event === 'payment.captured') {
       const payment = event.payload.payment.entity;
       const razorpayOrderId = payment.order_id;
       const razorpayPaymentId = payment.id;
 
-      const order = await Order.findOne({ razorpayOrderId });
+      const order = await Order.findOne({ razorpayOrderId }).select('+qrTokenHash');
       if (!order) {
-        console.error('Webhook: Order not found', razorpayOrderId);
-        return res.status(200).send('OK'); // Return 200 to prevent retries
+        return res.status(200).send('OK');
       }
 
-      // Idempotent check
       if (order.status !== 'pending_payment') {
         return res.status(200).send('OK');
       }
 
-      // Update order
-      order.status = 'paid';
-      order.razorpayPaymentId = razorpayPaymentId;
-      order.webhookVerified = true;
-
-      // Generate QR token
-      const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000); // 6 hours
-      const qrToken = jwt.sign(
-        {
-          orderId: order._id.toString(),
-          userId: order.userId.toString(),
-          amount: order.totalAmount,
-          items: order.items,
-          exp: Math.floor(expiresAt.getTime() / 1000),
-        },
-        QR_SECRET
-      );
-
-      order.qrToken = qrToken;
-      await order.save();
-
-      // Emit to user's socket room
-      io.to(order.userId.toString()).emit('order:paid', {
-        orderId: order._id,
-        qrToken,
+      await finalizePaidOrder(order, {
+        paymentMethod: 'razorpay',
+        razorpayPaymentId,
+        webhookVerified: true,
       });
-
-      // Emit to staff room for live updates
-      io.to('staff').emit('order:update', { order });
     }
 
-    // Handle payment.failed
     if (event.event === 'payment.failed') {
       const payment = event.payload.payment.entity;
       const razorpayOrderId = payment.order_id;
@@ -98,17 +67,18 @@ router.post('/razorpay', async (req: Request, res: Response) => {
       const order = await Order.findOne({ razorpayOrderId });
       if (order && order.status === 'pending_payment') {
         order.status = 'failed';
+        order.paymentStatus = 'failed';
         await order.save();
 
-        io.to(order.userId.toString()).emit('order:failed', { orderId: order._id });
+        io.to(String(order.userId)).emit('order:failed', { orderId: String(order._id) });
+        io.to('staff').emit('order:update', { order: serializeOrder(order) });
       }
     }
 
-    // Always return 200 to Razorpay
     res.status(200).send('OK');
   } catch (error) {
     console.error('Webhook error:', error);
-    res.status(200).send('OK'); // Return 200 to prevent retries
+    res.status(200).send('OK');
   }
 });
 

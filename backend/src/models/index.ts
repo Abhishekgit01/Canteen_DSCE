@@ -217,6 +217,11 @@ const orderSchema = new mongoose.Schema({
     type: String,
     sparse: true,
   },
+  upiTransactionId: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
   // Paytm fields
   paytmOrderId: {
     type: String,
@@ -229,7 +234,7 @@ const orderSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['razorpay', 'paytm', 'cash'],
+    enum: ['mock', 'upi_link', 'razorpay', 'paytm', 'cash'],
   },
   paymentStatus: {
     type: String,
@@ -242,10 +247,11 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending_payment', 'paid', 'preparing', 'ready', 'fulfilled', 'failed'],
     default: 'pending_payment',
   },
-  qrToken: {
+  qrTokenHash: {
     type: String,
     select: false,
   },
+  qrExpiresAt: Date,
   fulfilledBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
