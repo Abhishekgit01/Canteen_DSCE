@@ -19,6 +19,7 @@
     "expo": "~54.0.33",
     "expo-camera": "~17.0.10",
     "expo-haptics": "~14.0.1",
+    "expo-intent-launcher": "~13.0.8",
     "expo-secure-store": "~14.0.1",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",

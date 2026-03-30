@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { orderApi, paymentApi } from '../api';
 import { connectSocket } from '../api/socket';
 import { useAuthStore } from '../stores/authStore';
@@ -45,17 +46,6 @@ const androidUpiPackages = {
   phonepe: 'com.phonepe.app',
   paytm: 'net.one97.paytm',
 } as const;
-
-function getAndroidUpiIntentUri(upiUri: string, provider: keyof typeof androidUpiPackages) {
-  const packageName = androidUpiPackages[provider];
-  const upiPath = upiUri.replace(/^upi:\/\//, '');
-  return `intent://${upiPath}#Intent;scheme=upi;package=${packageName};action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`;
-}
-
-function getAndroidAppSchemeUri(upiUri: string, provider: keyof typeof androidUpiPackages) {
-  const packageName = androidUpiPackages[provider];
-  return upiUri.replace(/^upi:\/\//, `android-app://${packageName}/upi/`);
-}
 
 export default function PaymentScreen() {
   const route = useRoute<RootStackRouteProp<'Payment'>>();
@@ -179,25 +169,11 @@ export default function PaymentScreen() {
     try {
       if (Platform.OS === 'android') {
         const provider = selectedUpiApp as keyof typeof androidUpiPackages;
-        const targetedUris = [
-          getAndroidUpiIntentUri(upiPayment.upiUri, provider),
-          getAndroidAppSchemeUri(upiPayment.upiUri, provider),
-        ];
-
-        let opened = false;
-        for (const uri of targetedUris) {
-          try {
-            await Linking.openURL(uri);
-            opened = true;
-            break;
-          } catch {
-            continue;
-          }
-        }
-
-        if (!opened) {
-          throw new Error('Selected UPI app could not be opened');
-        }
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: upiPayment.upiUri,
+          packageName: androidUpiPackages[provider],
+          category: 'android.intent.category.BROWSABLE',
+        });
       } else {
         await Linking.openURL(upiPayment.upiUri);
       }
