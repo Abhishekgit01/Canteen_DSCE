@@ -128,6 +128,36 @@ const menuItems = [
     tempOptions: ['normal'],
     isAvailable: true,
   },
+  {
+    name: 'Paneer Tikka',
+    description: 'Grilled cottage cheese with spices',
+    imageUrl: 'https://images.unsplash.com/photo-1567188040759-fb8a883dc5d8?w=400',
+    price: 80,
+    calories: 300,
+    category: 'meals',
+    tempOptions: ['normal', 'hot'],
+    isAvailable: true,
+  },
+  {
+    name: 'Mango Lassi',
+    description: 'Sweet yogurt drink with mango',
+    imageUrl: 'https://images.unsplash.com/photo-1577803645773-f96470509688?w=400',
+    price: 45,
+    calories: 150,
+    category: 'beverages',
+    tempOptions: ['cold'],
+    isAvailable: true,
+  },
+  {
+    name: 'Pani Puri',
+    description: 'Crispy shells filled with spiced water',
+    imageUrl: 'https://images.unsplash.com/photo-1605883705077-8d3d3cebe78f?w=400',
+    price: 30,
+    calories: 120,
+    category: 'snacks',
+    tempOptions: ['normal'],
+    isAvailable: true,
+  },
 ];
 
 async function seed() {
