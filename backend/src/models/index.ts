@@ -217,6 +217,26 @@ const orderSchema = new mongoose.Schema({
     type: String,
     sparse: true,
   },
+  // Paytm fields
+  paytmOrderId: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
+  transactionId: {
+    type: String,
+    sparse: true,
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['razorpay', 'paytm', 'cash'],
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'completed', 'failed', 'refunded'],
+    default: 'pending',
+  },
+  paidAt: Date,
   status: {
     type: String,
     enum: ['pending_payment', 'paid', 'preparing', 'ready', 'fulfilled', 'failed'],
