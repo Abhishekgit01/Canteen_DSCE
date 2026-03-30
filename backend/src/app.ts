@@ -15,6 +15,9 @@ dotenv.config();
 
 const app = express();
 
+// Trust proxy (required for Render.com and express-rate-limit)
+app.set('trust proxy', 1);
+
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || [
   'http://localhost:5173',
   'http://localhost:19006',
