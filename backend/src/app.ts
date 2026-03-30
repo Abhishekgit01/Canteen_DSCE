@@ -33,35 +33,36 @@ app.use(cors({
   credentials: true,
 }));
 
+// Rate limiting temporarily disabled for deployment
 // 3. Global rate limit - 100 requests per 15 minutes
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'Too many requests, please try again later',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(globalLimiter);
+// const globalLimiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 100,
+//   message: 'Too many requests, please try again later',
+//   standardHeaders: true,
+//   legacyHeaders: false,
+// });
+// app.use(globalLimiter);
 
 // 4. Stricter rate limit on /api/auth - 10 requests per 15 minutes
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: 'Too many auth requests, please try again later',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api/auth', authLimiter);
+// const authLimiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 10,
+//   message: 'Too many auth requests, please try again later',
+//   standardHeaders: true,
+//   legacyHeaders: false,
+// });
+// app.use('/api/auth', authLimiter);
 
 // 5. Strictest rate limit on /api/auth/login - 5 per 15 minutes (brute force protection)
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: 'Too many login attempts, please try again in 15 minutes',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api/auth/login', loginLimiter);
+// const loginLimiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 5,
+//   message: 'Too many login attempts, please try again in 15 minutes',
+//   standardHeaders: true,
+//   legacyHeaders: false,
+// });
+// app.use('/api/auth/login', loginLimiter);
 
 // WEBHOOK ROUTE - MUST be before express.json()
 // Use raw body for signature verification
