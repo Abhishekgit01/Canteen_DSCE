@@ -8,9 +8,12 @@ import {
   Animated,
   Easing,
   Linking,
+  Platform,
+  ScrollView,
   TextInput,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { orderApi, paymentApi } from '../api';
 import { connectSocket } from '../api/socket';
 import { useAuthStore } from '../stores/authStore';
@@ -37,9 +40,27 @@ function getErrorMessage(error: any) {
   return error?.response?.data?.error || error?.description || 'Payment failed. Please try again.';
 }
 
+const androidUpiPackages = {
+  gpay: 'com.google.android.apps.nbu.paisa.user',
+  phonepe: 'com.phonepe.app',
+  paytm: 'net.one97.paytm',
+} as const;
+
+function getAndroidUpiIntentUri(upiUri: string, provider: keyof typeof androidUpiPackages) {
+  const packageName = androidUpiPackages[provider];
+  const upiPath = upiUri.replace(/^upi:\/\//, '');
+  return `intent://${upiPath}#Intent;scheme=upi;package=${packageName};action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`;
+}
+
+function getAndroidAppSchemeUri(upiUri: string, provider: keyof typeof androidUpiPackages) {
+  const packageName = androidUpiPackages[provider];
+  return upiUri.replace(/^upi:\/\//, `android-app://${packageName}/upi/`);
+}
+
 export default function PaymentScreen() {
   const route = useRoute<RootStackRouteProp<'Payment'>>();
   const navigation = useNavigation<RootStackNavigationProp<'Payment'>>();
+  const insets = useSafeAreaInsets();
   const { token, user } = useAuthStore();
   const { clearCart } = useCartStore();
   const payment = route.params;
@@ -156,10 +177,34 @@ export default function PaymentScreen() {
     setErrorMessage('');
 
     try {
-      await Linking.openURL(upiPayment.upiUri);
+      if (Platform.OS === 'android') {
+        const provider = selectedUpiApp as keyof typeof androidUpiPackages;
+        const targetedUris = [
+          getAndroidUpiIntentUri(upiPayment.upiUri, provider),
+          getAndroidAppSchemeUri(upiPayment.upiUri, provider),
+        ];
+
+        let opened = false;
+        for (const uri of targetedUris) {
+          try {
+            await Linking.openURL(uri);
+            opened = true;
+            break;
+          } catch {
+            continue;
+          }
+        }
+
+        if (!opened) {
+          throw new Error('Selected UPI app could not be opened');
+        }
+      } else {
+        await Linking.openURL(upiPayment.upiUri);
+      }
+
       setUpiAppOpened(true);
     } catch {
-      setErrorMessage('Could not open a UPI app on this device.');
+      setErrorMessage(`Could not open ${selectedUpiAppLabel}. Check that the UPI app is installed.`);
     }
   };
 
@@ -256,234 +301,244 @@ export default function PaymentScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Complete Payment</Text>
-        <Text style={styles.headerSubtitle}>Order #{shortOrderId}</Text>
-      </View>
+    <View style={styles.screen}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingTop: insets.top + 28, paddingBottom: 36 + insets.bottom },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Complete Payment</Text>
+          <Text style={styles.headerSubtitle}>Order #{shortOrderId}</Text>
+        </View>
 
-      {mode === 'mock' ? (
-        <>
-          <View style={styles.mockCard}>
-            <View style={styles.brandRow}>
-              <View style={styles.brandMark}>
-                <Text style={styles.brandMarkText}>G</Text>
+        {mode === 'mock' ? (
+          <>
+            <View style={styles.mockCard}>
+              <View style={styles.brandRow}>
+                <View style={styles.brandMark}>
+                  <Text style={styles.brandMarkText}>G</Text>
+                </View>
+                <View>
+                  <Text style={styles.brandName}>Google Pay</Text>
+                  <Text style={styles.brandType}>UPI payment</Text>
+                </View>
               </View>
-              <View>
-                <Text style={styles.brandName}>Google Pay</Text>
-                <Text style={styles.brandType}>UPI payment</Text>
+
+              <View style={styles.sectionDivider} />
+
+              <Text style={styles.amountLabel}>You pay</Text>
+              <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
+
+              <View style={styles.detailGrid}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>To</Text>
+                  <Text style={styles.detailValue}>{merchantName}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>UPI ID</Text>
+                  <Text style={styles.detailValue}>{merchantUpiId}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Order</Text>
+                  <Text style={styles.detailValue}>#{shortOrderId}</Text>
+                </View>
               </View>
             </View>
 
-            <View style={styles.sectionDivider} />
+            <View style={styles.instructionsCard}>
+              <Text style={styles.appsTitle}>Choose a UPI app</Text>
+              <View style={styles.appsRow}>
+                {upiAppOptions.map((option) => {
+                  const active = selectedUpiApp === option.key;
 
-            <Text style={styles.amountLabel}>You pay</Text>
-            <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
+                  return (
+                    <TouchableOpacity
+                      key={option.key}
+                      activeOpacity={0.9}
+                      style={[styles.appChip, active && styles.appChipActive]}
+                      onPress={() => setSelectedUpiApp(option.key)}
+                    >
+                      <View style={[styles.appBadge, { backgroundColor: option.background }]}>
+                        <Text style={[styles.appBadgeText, { color: option.tint }]}>{option.badge}</Text>
+                      </View>
+                      <Text style={[styles.appChipText, active && styles.appChipTextActive]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={styles.inputHelper}>
+                The checkout flow mirrors a real UPI handoff so you can test the full journey cleanly.
+              </Text>
+            </View>
+            <Animated.View style={{ transform: [{ scale: pulse }] }}>
+              <TouchableOpacity
+                style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+                onPress={handleMockPayment}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {isSubmitting ? 'Processing...' : `Continue with ${selectedUpiAppLabel}`}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </>
+        ) : null}
 
-            <View style={styles.detailGrid}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>To</Text>
-                <Text style={styles.detailValue}>{merchantName}</Text>
+        {mode === 'upi_link' ? (
+          <>
+            <View style={styles.mockCard}>
+              <View style={styles.brandRow}>
+                <View style={styles.brandMark}>
+                  <Text style={styles.brandMarkText}>G</Text>
+                </View>
+                <View>
+                  <Text style={styles.brandName}>Google Pay</Text>
+                  <Text style={styles.brandType}>UPI payment</Text>
+                </View>
               </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>UPI ID</Text>
-                <Text style={styles.detailValue}>{merchantUpiId}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Order</Text>
-                <Text style={styles.detailValue}>#{shortOrderId}</Text>
+
+              <View style={styles.sectionDivider} />
+
+              <Text style={styles.amountLabel}>You pay</Text>
+              <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
+
+              <View style={styles.detailGrid}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>To</Text>
+                  <Text style={styles.detailValue}>{merchantName}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>UPI ID</Text>
+                  <Text style={styles.detailValue}>{merchantUpiId}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Order</Text>
+                  <Text style={styles.detailValue}>#{shortOrderId}</Text>
+                </View>
               </View>
             </View>
-          </View>
 
-          <View style={styles.instructionsCard}>
-            <Text style={styles.appsTitle}>Choose a UPI app</Text>
-            <View style={styles.appsRow}>
-              {upiAppOptions.map((option) => {
-                const active = selectedUpiApp === option.key;
+            <View style={styles.instructionsCard}>
+              <Text style={styles.appsTitle}>Choose a UPI app</Text>
+              <View style={styles.appsRow}>
+                {upiAppOptions.map((option) => {
+                  const active = selectedUpiApp === option.key;
 
-                return (
-                  <TouchableOpacity
-                    key={option.key}
-                    activeOpacity={0.9}
-                    style={[styles.appChip, active && styles.appChipActive]}
-                    onPress={() => setSelectedUpiApp(option.key)}
-                  >
-                    <View style={[styles.appBadge, { backgroundColor: option.background }]}>
-                      <Text style={[styles.appBadgeText, { color: option.tint }]}>{option.badge}</Text>
-                    </View>
-                    <Text style={[styles.appChipText, active && styles.appChipTextActive]}>
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+                  return (
+                    <TouchableOpacity
+                      key={option.key}
+                      activeOpacity={0.9}
+                      style={[styles.appChip, active && styles.appChipActive]}
+                      onPress={() => setSelectedUpiApp(option.key)}
+                    >
+                      <View style={[styles.appBadge, { backgroundColor: option.background }]}>
+                        <Text style={[styles.appBadgeText, { color: option.tint }]}>{option.badge}</Text>
+                      </View>
+                      <Text style={[styles.appChipText, active && styles.appChipTextActive]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.stepRow}>
+                <View style={styles.stepIcon}>
+                  <Text style={styles.stepIconText}>1</Text>
+                </View>
+                <Text style={styles.stepText}>Tap the button below to open your UPI app</Text>
+              </View>
+              <View style={styles.stepRow}>
+                <View style={styles.stepIcon}>
+                  <Text style={styles.stepIconText}>2</Text>
+                </View>
+                <Text style={styles.stepText}>Pay ₹{formatAmount(amount)} to DSCE Canteen</Text>
+              </View>
+              <View style={styles.stepRow}>
+                <View style={styles.stepIcon}>
+                  <Text style={styles.stepIconText}>3</Text>
+                </View>
+                <Text style={styles.stepText}>
+                  Come back here and enter your UPI transaction ID
+                </Text>
+              </View>
             </View>
-            <Text style={styles.inputHelper}>
-              The checkout flow mirrors a real UPI handoff so you can test the full journey cleanly.
-            </Text>
-          </View>
 
-          <Animated.View style={{ transform: [{ scale: pulse }] }}>
             <TouchableOpacity
-              style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
-              onPress={handleMockPayment}
+              style={styles.primaryButton}
+              onPress={openUpiApp}
               disabled={isSubmitting}
             >
               <Text style={styles.primaryButtonText}>
-                {isSubmitting ? 'Processing...' : `Continue with ${selectedUpiAppLabel}`}
+                Open {selectedUpiAppLabel} for ₹{formatAmount(amount)}
               </Text>
             </TouchableOpacity>
-          </Animated.View>
-        </>
-      ) : null}
 
-      {mode === 'upi_link' ? (
-        <>
-          <View style={styles.mockCard}>
-            <View style={styles.brandRow}>
-              <View style={styles.brandMark}>
-                <Text style={styles.brandMarkText}>G</Text>
+            {upiAppOpened ? (
+              <View style={styles.inputCard}>
+                <Text style={styles.inputLabel}>Enter Transaction ID from your UPI app</Text>
+                <Text style={styles.inputHelper}>
+                  Find it in GPay under Transaction Details or PhonePe under History
+                </Text>
+                <TextInput
+                  value={upiTransactionId}
+                  onChangeText={(value) => setUpiTransactionId(value.replace(/\D/g, ''))}
+                  placeholder="e.g. 316847291234"
+                  placeholderTextColor="#6b7280"
+                  keyboardType="number-pad"
+                  style={styles.input}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.primaryButton,
+                    (upiTransactionId.length < 8 || isSubmitting) && styles.primaryButtonDisabled,
+                  ]}
+                  onPress={handleUpiConfirmation}
+                  disabled={upiTransactionId.length < 8 || isSubmitting}
+                >
+                  <Text style={styles.primaryButtonText}>Confirm Payment</Text>
+                </TouchableOpacity>
               </View>
-              <View>
-                <Text style={styles.brandName}>Google Pay</Text>
-                <Text style={styles.brandType}>UPI payment</Text>
-              </View>
-            </View>
+            ) : null}
 
-            <View style={styles.sectionDivider} />
+            <Text style={styles.bottomNote}>
+              Paid to: {merchantUpiId}
+            </Text>
+          </>
+        ) : null}
 
-            <Text style={styles.amountLabel}>You pay</Text>
+        {mode === 'razorpay' ? (
+          <View style={styles.razorpayCard}>
             <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
-
-            <View style={styles.detailGrid}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>To</Text>
-                <Text style={styles.detailValue}>{merchantName}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>UPI ID</Text>
-                <Text style={styles.detailValue}>{merchantUpiId}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Order</Text>
-                <Text style={styles.detailValue}>#{shortOrderId}</Text>
-              </View>
-            </View>
+            <Text style={styles.mutedText}>Launching Razorpay checkout</Text>
+            <Text style={styles.mutedText}>Stay on this screen until payment is confirmed.</Text>
           </View>
+        ) : null}
 
-          <View style={styles.instructionsCard}>
-            <Text style={styles.appsTitle}>Choose a UPI app</Text>
-            <View style={styles.appsRow}>
-              {upiAppOptions.map((option) => {
-                const active = selectedUpiApp === option.key;
+        {renderStatus()}
 
-                return (
-                  <TouchableOpacity
-                    key={option.key}
-                    activeOpacity={0.9}
-                    style={[styles.appChip, active && styles.appChipActive]}
-                    onPress={() => setSelectedUpiApp(option.key)}
-                  >
-                    <View style={[styles.appBadge, { backgroundColor: option.background }]}>
-                      <Text style={[styles.appBadgeText, { color: option.tint }]}>{option.badge}</Text>
-                    </View>
-                    <Text style={[styles.appChipText, active && styles.appChipTextActive]}>
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <View style={styles.stepRow}>
-              <View style={styles.stepIcon}>
-                <Text style={styles.stepIconText}>1</Text>
-              </View>
-              <Text style={styles.stepText}>Tap the button below to open your UPI app</Text>
-            </View>
-            <View style={styles.stepRow}>
-              <View style={styles.stepIcon}>
-                <Text style={styles.stepIconText}>2</Text>
-              </View>
-              <Text style={styles.stepText}>Pay ₹{formatAmount(amount)} to DSCE Canteen</Text>
-            </View>
-            <View style={styles.stepRow}>
-              <View style={styles.stepIcon}>
-                <Text style={styles.stepIconText}>3</Text>
-              </View>
-              <Text style={styles.stepText}>
-                Come back here and enter your UPI transaction ID
-              </Text>
-            </View>
+        {errorMessage ? (
+          <View style={styles.errorCard}>
+            <Text style={styles.errorText}>{errorMessage}</Text>
           </View>
+        ) : null}
 
+        {mode === 'razorpay' ? (
           <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={openUpiApp}
+            style={styles.secondaryButton}
+            onPress={() => navigation.goBack()}
             disabled={isSubmitting}
           >
-            <Text style={styles.primaryButtonText}>Open {selectedUpiAppLabel}</Text>
+            <Text style={styles.secondaryButtonText}>Go Back</Text>
           </TouchableOpacity>
-
-          {upiAppOpened ? (
-            <View style={styles.inputCard}>
-              <Text style={styles.inputLabel}>Enter Transaction ID from your UPI app</Text>
-              <Text style={styles.inputHelper}>
-                Find it in GPay under Transaction Details or PhonePe under History
-              </Text>
-              <TextInput
-                value={upiTransactionId}
-                onChangeText={(value) => setUpiTransactionId(value.replace(/\D/g, ''))}
-                placeholder="e.g. 316847291234"
-                placeholderTextColor="#6b7280"
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.primaryButton,
-                  (upiTransactionId.length < 8 || isSubmitting) && styles.primaryButtonDisabled,
-                ]}
-                onPress={handleUpiConfirmation}
-                disabled={upiTransactionId.length < 8 || isSubmitting}
-              >
-                <Text style={styles.primaryButtonText}>Confirm Payment</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          <Text style={styles.bottomNote}>
-            Paid to: {merchantUpiId}
-          </Text>
-        </>
-      ) : null}
-
-      {mode === 'razorpay' ? (
-        <View style={styles.razorpayCard}>
-          <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
-          <Text style={styles.mutedText}>Launching Razorpay checkout</Text>
-          <Text style={styles.mutedText}>Stay on this screen until payment is confirmed.</Text>
-        </View>
-      ) : null}
-
-      {renderStatus()}
-
-      {errorMessage ? (
-        <View style={styles.errorCard}>
-          <Text style={styles.errorText}>{errorMessage}</Text>
-        </View>
-      ) : null}
-
-      {mode === 'razorpay' ? (
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => navigation.goBack()}
-          disabled={isSubmitting}
-        >
-          <Text style={styles.secondaryButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      ) : null}
+        ) : null}
+      </ScrollView>
 
       <View style={styles.footerGlow} />
       <View style={styles.footerGlowSecondary} />
@@ -492,12 +547,17 @@ export default function PaymentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
     backgroundColor: '#050816',
+  },
+  container: {
+    flex: 1,
+  },
+  contentContainer: {
     paddingHorizontal: 24,
-    paddingTop: 72,
-    paddingBottom: 36,
+    gap: 18,
+    minHeight: '100%',
   },
   header: {
     marginBottom: 24,

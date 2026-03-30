@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { menuApi } from '../api';
@@ -19,11 +20,11 @@ import { MainTabNavigationProp, MenuItem } from '../types';
 import { palette, shadows } from '../theme';
 
 const categories = [
-  { key: 'All', label: 'All', emoji: '🍽️' },
-  { key: 'meals', label: 'Meals', emoji: '🍛' },
-  { key: 'snacks', label: 'Snacks', emoji: '🍟' },
-  { key: 'beverages', label: 'Beverages', emoji: '☕' },
-  { key: 'desserts', label: 'Desserts', emoji: '🧁' },
+  { key: 'All', label: 'All' },
+  { key: 'meals', label: 'Meals' },
+  { key: 'snacks', label: 'Snacks' },
+  { key: 'beverages', label: 'Beverages' },
+  { key: 'desserts', label: 'Desserts' },
 ];
 
 const getDefaultScheduledTime = () => {
@@ -37,6 +38,7 @@ const getDefaultScheduledTime = () => {
 export default function HomeScreen() {
   const navigation = useNavigation<MainTabNavigationProp<'Home'>>();
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const { user } = useAuthStore();
   const { items, addItem, updateQuantity, total } = useCartStore();
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -54,8 +56,12 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    const fetchMenu = async () => {
+    const fetchMenu = async (showLoader = false) => {
       try {
+        if (showLoader) {
+          setLoading(true);
+        }
+
         setErrorMessage('');
         const response = await menuApi.getMenu();
         setMenuItems(response.data);
@@ -67,8 +73,14 @@ export default function HomeScreen() {
       }
     };
 
-    void fetchMenu();
-  }, []);
+    void fetchMenu(true);
+
+    const unsubscribe = navigation.addListener('focus', () => {
+      void fetchMenu(false);
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   const filteredItems =
     selectedCategory === 'All'
@@ -101,7 +113,7 @@ export default function HomeScreen() {
     <View>
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View>
-            <View style={styles.pickupRow}>
+          <View style={styles.pickupRow}>
             <AppIcon name="map-pin" size={13} color="rgba(255,255,255,0.72)" />
             <Text style={styles.pickupLabel}>PICKUP FROM</Text>
           </View>
@@ -170,7 +182,6 @@ export default function HomeScreen() {
                 style={[styles.categoryChip, active && styles.categoryChipActive]}
                 onPress={() => setSelectedCategory(item.key)}
               >
-                <Text style={styles.categoryEmoji}>{item.emoji}</Text>
                 <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>
                   {item.label}
                 </Text>
@@ -182,7 +193,9 @@ export default function HomeScreen() {
         <View style={styles.sectionHeading}>
           <View>
             <Text style={styles.sectionTitle}>
-              {selectedCategory === 'All' ? 'Lunch Specials' : categories.find((item) => item.key === selectedCategory)?.label}
+              {selectedCategory === 'All'
+                ? 'Lunch Specials'
+                : categories.find((item) => item.key === selectedCategory)?.label}
             </Text>
             <Text style={styles.sectionSubtitle}>
               {filteredItems.length} items available for {user?.name?.split(' ')[0] || 'you'}
@@ -212,7 +225,7 @@ export default function HomeScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={[
             styles.menuList,
-            { paddingBottom: cartCount > 0 ? 180 : 110 + insets.bottom },
+            { paddingBottom: cartCount > 0 ? tabBarHeight + 64 : tabBarHeight + 18 },
           ]}
           ListHeaderComponent={renderHeader}
           ListEmptyComponent={
@@ -246,7 +259,7 @@ export default function HomeScreen() {
       {cartCount > 0 ? (
         <TouchableOpacity
           activeOpacity={0.95}
-          style={[styles.cartBar, { bottom: 82 + insets.bottom }]}
+          style={[styles.cartBar, { bottom: 14 + insets.bottom }]}
           onPress={() => navigation.navigate('Cart')}
         >
           <View style={styles.cartBarLeft}>
@@ -426,9 +439,6 @@ const styles = StyleSheet.create({
   },
   categoryChipActive: {
     backgroundColor: palette.brand,
-  },
-  categoryEmoji: {
-    fontSize: 15,
   },
   categoryLabel: {
     color: palette.ink,

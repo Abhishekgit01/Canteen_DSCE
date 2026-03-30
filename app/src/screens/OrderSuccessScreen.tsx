@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import AppIcon from '../components/AppIcon';
 import { RootStackNavigationProp, RootStackRouteProp } from '../types';
 
 export default function OrderSuccessScreen() {
@@ -16,7 +17,7 @@ export default function OrderSuccessScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.checkmark}>
-        <Text style={styles.checkmarkText}>✓</Text>
+        <AppIcon name="shield-check-outline" size={56} color="#ffffff" />
       </View>
       <Text style={styles.title}>Your order is ready!</Text>
       <Text style={styles.subtitle}>Order #{orderId.slice(-6)} has been fulfilled</Text>
@@ -44,11 +45,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 32,
-  },
-  checkmarkText: {
-    fontSize: 60,
-    color: '#ffffff',
-    fontWeight: '700',
   },
   title: {
     fontSize: 28,
