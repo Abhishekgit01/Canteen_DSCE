@@ -74,6 +74,20 @@ io.on('connection', (socket) => {
 // Export io for use in routes
 export { io };
 
+// Root route for API status and Razorpay verification
+app.get('/', (_req, res) => {
+  res.json({ 
+    name: 'DSCE Canteen API',
+    status: 'online',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      menu: '/api/menu',
+      auth: '/api/auth'
+    }
+  });
+});
+
 // Connect to MongoDB and start server
 mongoose.connect(MONGO_URI)
   .then(() => {
