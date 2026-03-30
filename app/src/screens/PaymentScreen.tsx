@@ -23,6 +23,12 @@ import {
   UpiLinkPaymentInitResponse,
 } from '../types';
 
+const upiAppOptions = [
+  { key: 'gpay', label: 'Google Pay', badge: 'G', tint: '#2563eb', background: '#e0ecff' },
+  { key: 'phonepe', label: 'PhonePe', badge: 'P', tint: '#6d28d9', background: '#efe3ff' },
+  { key: 'paytm', label: 'Paytm UPI', badge: '₹', tint: '#0f766e', background: '#dff8f4' },
+] as const;
+
 function formatAmount(amount: number) {
   return amount.toFixed(2).replace(/\.00$/, '');
 }
@@ -43,11 +49,17 @@ export default function PaymentScreen() {
   const [errorMessage, setErrorMessage] = useState('');
   const [upiAppOpened, setUpiAppOpened] = useState(false);
   const [upiTransactionId, setUpiTransactionId] = useState('');
+  const [selectedUpiApp, setSelectedUpiApp] = useState<(typeof upiAppOptions)[number]['key']>('gpay');
   const pulse = useRef(new Animated.Value(1)).current;
   const hasNavigatedRef = useRef(false);
   const razorpayStartedRef = useRef(false);
 
   const shortOrderId = orderId.slice(-6).toUpperCase();
+  const upiPayment = mode === 'upi_link' ? (payment as UpiLinkPaymentInitResponse) : null;
+  const merchantName = upiPayment?.canteenName || 'DSCE Canteen';
+  const merchantUpiId = upiPayment?.canteenUpiId || 'canteen@upi';
+  const selectedUpiAppLabel =
+    upiAppOptions.find((option) => option.key === selectedUpiApp)?.label || 'Google Pay';
 
   useEffect(() => {
     if (mode !== 'mock') {
@@ -253,10 +265,63 @@ export default function PaymentScreen() {
       {mode === 'mock' ? (
         <>
           <View style={styles.mockCard}>
-            <Text style={styles.upiLogo}>UPI</Text>
+            <View style={styles.brandRow}>
+              <View style={styles.brandMark}>
+                <Text style={styles.brandMarkText}>G</Text>
+              </View>
+              <View>
+                <Text style={styles.brandName}>Google Pay</Text>
+                <Text style={styles.brandType}>UPI payment</Text>
+              </View>
+            </View>
+
+            <View style={styles.sectionDivider} />
+
+            <Text style={styles.amountLabel}>You pay</Text>
             <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
-            <Text style={styles.mutedText}>Pay to: DSCE Canteen</Text>
-            <Text style={styles.mutedText}>Order: #{shortOrderId}</Text>
+
+            <View style={styles.detailGrid}>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>To</Text>
+                <Text style={styles.detailValue}>{merchantName}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>UPI ID</Text>
+                <Text style={styles.detailValue}>{merchantUpiId}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Order</Text>
+                <Text style={styles.detailValue}>#{shortOrderId}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.instructionsCard}>
+            <Text style={styles.appsTitle}>Choose a UPI app</Text>
+            <View style={styles.appsRow}>
+              {upiAppOptions.map((option) => {
+                const active = selectedUpiApp === option.key;
+
+                return (
+                  <TouchableOpacity
+                    key={option.key}
+                    activeOpacity={0.9}
+                    style={[styles.appChip, active && styles.appChipActive]}
+                    onPress={() => setSelectedUpiApp(option.key)}
+                  >
+                    <View style={[styles.appBadge, { backgroundColor: option.background }]}>
+                      <Text style={[styles.appBadgeText, { color: option.tint }]}>{option.badge}</Text>
+                    </View>
+                    <Text style={[styles.appChipText, active && styles.appChipTextActive]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={styles.inputHelper}>
+              The checkout flow mirrors a real UPI handoff so you can test the full journey cleanly.
+            </Text>
           </View>
 
           <Animated.View style={{ transform: [{ scale: pulse }] }}>
@@ -266,18 +331,71 @@ export default function PaymentScreen() {
               disabled={isSubmitting}
             >
               <Text style={styles.primaryButtonText}>
-                {isSubmitting ? 'Processing...' : `Pay ₹${formatAmount(amount)}`}
+                {isSubmitting ? 'Processing...' : `Continue with ${selectedUpiAppLabel}`}
               </Text>
             </TouchableOpacity>
           </Animated.View>
-
-          <Text style={styles.testModeText}>Test mode - no real money</Text>
         </>
       ) : null}
 
       {mode === 'upi_link' ? (
         <>
+          <View style={styles.mockCard}>
+            <View style={styles.brandRow}>
+              <View style={styles.brandMark}>
+                <Text style={styles.brandMarkText}>G</Text>
+              </View>
+              <View>
+                <Text style={styles.brandName}>Google Pay</Text>
+                <Text style={styles.brandType}>UPI payment</Text>
+              </View>
+            </View>
+
+            <View style={styles.sectionDivider} />
+
+            <Text style={styles.amountLabel}>You pay</Text>
+            <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
+
+            <View style={styles.detailGrid}>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>To</Text>
+                <Text style={styles.detailValue}>{merchantName}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>UPI ID</Text>
+                <Text style={styles.detailValue}>{merchantUpiId}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Order</Text>
+                <Text style={styles.detailValue}>#{shortOrderId}</Text>
+              </View>
+            </View>
+          </View>
+
           <View style={styles.instructionsCard}>
+            <Text style={styles.appsTitle}>Choose a UPI app</Text>
+            <View style={styles.appsRow}>
+              {upiAppOptions.map((option) => {
+                const active = selectedUpiApp === option.key;
+
+                return (
+                  <TouchableOpacity
+                    key={option.key}
+                    activeOpacity={0.9}
+                    style={[styles.appChip, active && styles.appChipActive]}
+                    onPress={() => setSelectedUpiApp(option.key)}
+                  >
+                    <View style={[styles.appBadge, { backgroundColor: option.background }]}>
+                      <Text style={[styles.appBadgeText, { color: option.tint }]}>{option.badge}</Text>
+                    </View>
+                    <Text style={[styles.appChipText, active && styles.appChipTextActive]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <View style={styles.stepRow}>
               <View style={styles.stepIcon}>
                 <Text style={styles.stepIconText}>1</Text>
@@ -305,7 +423,7 @@ export default function PaymentScreen() {
             onPress={openUpiApp}
             disabled={isSubmitting}
           >
-            <Text style={styles.primaryButtonText}>Open UPI App (GPay / PhonePe)</Text>
+            <Text style={styles.primaryButtonText}>Open {selectedUpiAppLabel}</Text>
           </TouchableOpacity>
 
           {upiAppOpened ? (
@@ -336,7 +454,7 @@ export default function PaymentScreen() {
           ) : null}
 
           <Text style={styles.bottomNote}>
-            Paid to: {(payment as UpiLinkPaymentInitResponse).canteenUpiId}
+            Paid to: {merchantUpiId}
           </Text>
         </>
       ) : null}
@@ -406,6 +524,45 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     elevation: 12,
   },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  brandMark: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#e0ecff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandMarkText: {
+    color: '#2563eb',
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  brandName: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  brandType: {
+    color: '#8f9bb3',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginVertical: 20,
+  },
+  amountLabel: {
+    color: '#8f9bb3',
+    fontSize: 13,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
   instructionsCard: {
     backgroundColor: '#101827',
     borderRadius: 20,
@@ -431,18 +588,31 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
-  upiLogo: {
-    color: '#3b82f6',
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: 2,
-    marginBottom: 18,
-  },
   amount: {
     fontSize: 40,
     fontWeight: '800',
     color: '#ffffff',
-    marginBottom: 10,
+    marginBottom: 18,
+  },
+  detailGrid: {
+    gap: 14,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  detailLabel: {
+    color: '#8f9bb3',
+    fontSize: 14,
+  },
+  detailValue: {
+    flex: 1,
+    textAlign: 'right',
+    color: '#f8fafc',
+    fontSize: 15,
+    fontWeight: '600',
   },
   mutedText: {
     color: '#8f9bb3',
@@ -482,11 +652,49 @@ const styles = StyleSheet.create({
     color: '#cbd5e1',
     fontWeight: '600',
   },
-  testModeText: {
-    marginTop: 14,
-    textAlign: 'center',
-    color: '#8f9bb3',
-    fontSize: 13,
+  appsTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  appsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  appChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#0f1726',
+  },
+  appChipActive: {
+    borderColor: 'rgba(249, 115, 22, 0.42)',
+    backgroundColor: 'rgba(249, 115, 22, 0.12)',
+  },
+  appBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appBadgeText: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  appChipText: {
+    color: '#cbd5e1',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  appChipTextActive: {
+    color: '#ffffff',
   },
   stepRow: {
     flexDirection: 'row',

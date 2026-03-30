@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CartItem, MenuItem } from '../types';
+import { CartItem } from '../types';
+import { getMenuItemId, normalizeCartItem } from '../utils/menu';
 
 interface CartState {
   items: CartItem[];
@@ -15,29 +16,38 @@ interface CartState {
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   addItem: async (item) => {
+    const normalizedItem = normalizeCartItem(item);
+    if (!normalizedItem) {
+      return;
+    }
+
     const { items } = get();
-    const existingIndex = items.findIndex(i => i.menuItem.id === item.menuItem.id);
+    const existingIndex = items.findIndex(
+      (entry) => getMenuItemId(entry.menuItem) === normalizedItem.menuItem.id,
+    );
     let newItems;
     if (existingIndex >= 0) {
       newItems = [...items];
-      newItems[existingIndex] = item;
+      newItems[existingIndex] = normalizedItem;
     } else {
-      newItems = [...items, item];
+      newItems = [...items, normalizedItem];
     }
     await AsyncStorage.setItem('cart', JSON.stringify(newItems));
     set({ items: newItems });
   },
   removeItem: async (menuItemId) => {
     const { items } = get();
-    const newItems = items.filter(i => i.menuItem.id !== menuItemId);
+    const newItems = items.filter((entry) => getMenuItemId(entry.menuItem) !== menuItemId);
     await AsyncStorage.setItem('cart', JSON.stringify(newItems));
     set({ items: newItems });
   },
   updateQuantity: async (menuItemId, quantity) => {
     const { items } = get();
-    const newItems = items.map(i =>
-      i.menuItem.id === menuItemId ? { ...i, quantity } : i
-    ).filter(i => i.quantity > 0);
+    const newItems = items
+      .map((entry) =>
+        getMenuItemId(entry.menuItem) === menuItemId ? { ...entry, quantity } : entry,
+      )
+      .filter((entry) => entry.quantity > 0);
     await AsyncStorage.setItem('cart', JSON.stringify(newItems));
     set({ items: newItems });
   },
@@ -49,7 +59,15 @@ export const useCartStore = create<CartState>((set, get) => ({
     try {
       const cartStr = await AsyncStorage.getItem('cart');
       if (cartStr) {
-        set({ items: JSON.parse(cartStr) });
+        const parsedItems = JSON.parse(cartStr);
+        const normalizedItems = Array.isArray(parsedItems)
+          ? parsedItems
+              .map((item) => normalizeCartItem(item))
+              .filter((item): item is CartItem => item !== null)
+          : [];
+
+        await AsyncStorage.setItem('cart', JSON.stringify(normalizedItems));
+        set({ items: normalizedItems });
         return;
       }
       set({ items: [] });

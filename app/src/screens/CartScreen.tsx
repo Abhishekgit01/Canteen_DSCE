@@ -17,9 +17,18 @@ import FoodCard from '../components/FoodCard';
 import { useCartStore } from '../stores/cartStore';
 import { MainTabNavigationProp, MenuItem } from '../types';
 import { palette, shadows } from '../theme';
+import { getMenuItemId } from '../utils/menu';
 
 function getErrorMessage(error: any) {
   return error?.response?.data?.error || 'Could not create your order. Please try again.';
+}
+
+function getDefaultScheduledTime() {
+  const slot = new Date();
+  slot.setMinutes(slot.getMinutes() + 15);
+  const hours = slot.getHours().toString().padStart(2, '0');
+  const minutes = slot.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
 }
 
 export default function CartScreen() {
@@ -56,13 +65,23 @@ export default function CartScreen() {
     setErrorMessage('');
 
     try {
-      const response = await orderApi.createOrder({
-        items: items.map((item) => ({
-          menuItemId: item.menuItem.id,
+      const orderItems = items
+        .map((item) => ({
+          menuItemId: getMenuItemId(item.menuItem),
           quantity: item.quantity,
           tempPreference: item.tempPreference,
-        })),
-        scheduledTime: items[0]?.scheduledTime || '',
+        }))
+        .filter((item) => item.menuItemId && item.quantity > 0);
+
+      if (orderItems.length !== items.length) {
+        setErrorMessage('Some cart items were outdated. Please add them again and retry checkout.');
+        setIsCreatingOrder(false);
+        return;
+      }
+
+      const response = await orderApi.createOrder({
+        items: orderItems,
+        scheduledTime: items[0]?.scheduledTime || getDefaultScheduledTime(),
       });
 
       navigation.navigate('Payment', response.data);
@@ -201,8 +220,8 @@ export default function CartScreen() {
                 <AppIcon name="wallet-outline" size={18} color={palette.brand} />
               </View>
               <View style={styles.paymentTextWrap}>
-                <Text style={styles.paymentLabel}>Mock or Demo Payments</Text>
-                <Text style={styles.paymentHint}>Perfect for development and classroom testing</Text>
+                <Text style={styles.paymentLabel}>Google Pay / PhonePe</Text>
+                <Text style={styles.paymentHint}>Open your preferred UPI app with the order amount ready</Text>
               </View>
             </View>
 
@@ -211,8 +230,8 @@ export default function CartScreen() {
                 <AppIcon name="cellphone-nfc" size={18} color="#7C3AED" />
               </View>
               <View style={styles.paymentTextWrap}>
-                <Text style={styles.paymentLabel}>UPI App Redirect</Text>
-                <Text style={styles.paymentHint}>GPay or PhonePe opens with the order amount prefilled</Text>
+                <Text style={styles.paymentLabel}>Canteen UPI</Text>
+                <Text style={styles.paymentHint}>The backend fills the payee, amount, and order reference for you</Text>
               </View>
             </View>
 
@@ -221,8 +240,8 @@ export default function CartScreen() {
                 <AppIcon name="credit-card-outline" size={18} color={palette.info} />
               </View>
               <View style={styles.paymentTextWrap}>
-                <Text style={styles.paymentLabel}>Gateway Ready</Text>
-                <Text style={styles.paymentHint}>Razorpay mode activates when the backend enables it</Text>
+                <Text style={styles.paymentLabel}>Secure Checkout</Text>
+                <Text style={styles.paymentHint}>The payment screen will automatically match the backend mode</Text>
               </View>
             </View>
           </View>

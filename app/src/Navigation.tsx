@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, View, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import SplashScreen from './screens/SplashScreen';
@@ -29,13 +29,6 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 function TabIcon({ name, focused }: { name: keyof MainTabParamList; focused: boolean }) {
-  const labels: Record<keyof MainTabParamList, string> = {
-    Home: 'CANTEEN',
-    Cart: 'CART',
-    Orders: 'ORDERS',
-    Profile: 'PROFILE',
-    Scanner: 'SCAN',
-  };
   const colors = {
     active: palette.accent,
     inactive: '#A3A3A3',
@@ -60,9 +53,6 @@ function TabIcon({ name, focused }: { name: keyof MainTabParamList; focused: boo
       <View style={[styles.tabIconWrap, focused && styles.tabIconActive]}>
         {icons[name]}
       </View>
-      <Text style={[styles.tabLabel, focused ? styles.tabLabelActive : styles.tabLabelInactive]}>
-        {labels[name]}
-      </Text>
     </View>
   );
 }
@@ -70,13 +60,23 @@ function TabIcon({ name, focused }: { name: keyof MainTabParamList; focused: boo
 function MainTabs() {
   const { user } = useAuthStore();
   const insets = useSafeAreaInsets();
+  const labels: Record<keyof MainTabParamList, string> = {
+    Home: 'Home',
+    Cart: 'Cart',
+    Orders: 'Orders',
+    Profile: 'Profile',
+    Scanner: 'Scan',
+  };
 
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,
-        tabBarStyle: [styles.tabBar, { height: 72 + insets.bottom, paddingBottom: 8 + insets.bottom }],
-        tabBarShowLabel: false,
+        tabBarLabel: labels[route.name],
+        tabBarActiveTintColor: palette.accent,
+        tabBarInactiveTintColor: '#8A94A6',
+        tabBarStyle: [styles.tabBar, { height: 76 + insets.bottom, paddingBottom: 8 + insets.bottom }],
+        tabBarLabelStyle: styles.tabBarLabel,
         tabBarItemStyle: styles.tabBarItem,
         headerShown: false,
         tabBarHideOnKeyboard: true,
@@ -149,12 +149,12 @@ const styles = StyleSheet.create({
     ...shadows.floating,
   },
   tabBarItem: {
-    paddingVertical: 0,
+    paddingTop: 4,
   },
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 3,
   },
   tabIndicator: {
     width: 22,
@@ -176,15 +176,10 @@ const styles = StyleSheet.create({
   tabIconActive: {
     backgroundColor: 'rgba(245,130,31,0.12)',
   },
-  tabLabel: {
-    fontSize: 10,
+  tabBarLabel: {
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.7,
-  },
-  tabLabelActive: {
-    color: palette.accent,
-  },
-  tabLabelInactive: {
-    color: '#A3A3A3',
+    letterSpacing: 0.1,
+    marginBottom: 2,
   },
 });

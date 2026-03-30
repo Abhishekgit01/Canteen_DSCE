@@ -24,8 +24,14 @@ interface AuthenticatedRequest extends Request {
 type CreateOrderBody = {
   items?: Array<{
     menuItemId?: string;
-    quantity?: number;
-    tempPreference?: 'cold' | 'normal' | 'hot';
+    id?: string;
+    _id?: string;
+    menuItem?: {
+      id?: string;
+      _id?: string;
+    };
+    quantity?: number | string;
+    tempPreference?: 'cold' | 'normal' | 'hot' | string;
   }>;
   scheduledTime?: string;
 };
@@ -82,6 +88,50 @@ function getPaymentConfigResponse() {
     canteenUpiId: mode === 'upi_link' ? process.env.CANTEEN_UPI_ID || 'canteen@upi' : undefined,
     canteenName: mode === 'upi_link' ? process.env.CANTEEN_NAME || 'DSCE+Canteen' : undefined,
   };
+}
+
+function getDefaultScheduledTime() {
+  const slot = new Date();
+  slot.setMinutes(slot.getMinutes() + 15);
+  const hours = slot.getHours().toString().padStart(2, '0');
+  const minutes = slot.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function getRequestedMenuItemId(item: NonNullable<CreateOrderBody['items']>[number]) {
+  const candidates = [
+    item.menuItemId,
+    item.id,
+    item._id,
+    item.menuItem?.id,
+    item.menuItem?._id,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return '';
+}
+
+function getRequestedQuantity(value: unknown) {
+  const quantity = Number(value);
+  return Number.isFinite(quantity) ? Math.floor(quantity) : NaN;
+}
+
+function getRequestedTempPreference(value: unknown) {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  if (normalizedValue === 'cold' || normalizedValue === 'normal' || normalizedValue === 'hot') {
+    return normalizedValue;
+  }
+
+  return undefined;
 }
 
 async function findOwnedOrder(orderId: string, userId: string) {
@@ -145,50 +195,62 @@ router.post(
 
     try {
       const { items, scheduledTime } = req.body as CreateOrderBody;
+      const resolvedScheduledTime =
+        typeof scheduledTime === 'string' && scheduledTime.trim()
+          ? scheduledTime.trim()
+          : getDefaultScheduledTime();
 
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'At least one item is required' });
-      }
-
-      if (!scheduledTime || typeof scheduledTime !== 'string') {
-        return res.status(400).json({ error: 'Scheduled time is required' });
       }
 
       const orderItems = [];
       let totalAmount = 0;
 
       for (const item of items) {
-        if (!item.menuItemId || !item.quantity || item.quantity < 1) {
+        const requestedMenuItemId = getRequestedMenuItemId(item);
+        const requestedQuantity = getRequestedQuantity(item.quantity);
+        const requestedTempPreference = getRequestedTempPreference(item.tempPreference);
+
+        if (!requestedMenuItemId || !requestedQuantity || requestedQuantity < 1) {
           return res.status(400).json({ error: 'Invalid order item' });
         }
 
-        const menuItem = await MenuItem.findById(item.menuItemId);
+        const menuItem = await MenuItem.findById(requestedMenuItemId);
         if (!menuItem || !menuItem.isAvailable) {
           return res.status(400).json({ error: 'One or more items are unavailable' });
         }
 
         if (
-          item.tempPreference &&
+          typeof item.tempPreference === 'string' &&
           menuItem.tempOptions.length > 0 &&
-          !menuItem.tempOptions.includes(item.tempPreference)
+          !requestedTempPreference
         ) {
           return res.status(400).json({ error: `Invalid temperature for ${menuItem.name}` });
         }
 
-        totalAmount += menuItem.price * item.quantity;
+        if (
+          requestedTempPreference &&
+          menuItem.tempOptions.length > 0 &&
+          !menuItem.tempOptions.includes(requestedTempPreference)
+        ) {
+          return res.status(400).json({ error: `Invalid temperature for ${menuItem.name}` });
+        }
+
+        totalAmount += menuItem.price * requestedQuantity;
         orderItems.push({
           menuItemId: menuItem._id,
           name: menuItem.name,
           price: menuItem.price,
-          quantity: item.quantity,
-          tempPreference: item.tempPreference,
+          quantity: requestedQuantity,
+          tempPreference: requestedTempPreference,
         });
       }
 
       order = await Order.create({
         userId: req.user!.id,
         items: orderItems,
-        scheduledTime,
+        scheduledTime: resolvedScheduledTime,
         totalAmount: Number(totalAmount.toFixed(2)),
         status: 'pending_payment',
         paymentStatus: 'pending',

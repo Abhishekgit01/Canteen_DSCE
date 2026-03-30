@@ -2,6 +2,7 @@ import axios from 'axios';
 import { NativeModules, Platform } from 'react-native';
 import { useAuthStore } from '../stores/authStore';
 import type { PaymentInitResponse, PaymentMode, User } from '../types';
+import { normalizeMenuItems } from '../utils/menu';
 
 const normalizeOrigin = (value?: string | null): string | null => {
   if (!value) {
@@ -116,7 +117,13 @@ export const authApi = {
 };
 
 export const menuApi = {
-  getMenu: () => api.get('/menu'),
+  getMenu: async () => {
+    const response = await api.get('/menu');
+    return {
+      ...response,
+      data: normalizeMenuItems(response.data),
+    };
+  },
 };
 
 export const orderApi = {
