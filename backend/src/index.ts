@@ -43,6 +43,20 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Root route for verification
+app.get('/', (_req, res) => {
+  res.json({ 
+    name: 'DSCE Canteen API',
+    status: 'online',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      menu: '/api/menu',
+      auth: '/api/auth'
+    }
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
