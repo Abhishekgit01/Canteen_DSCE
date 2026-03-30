@@ -9,7 +9,7 @@ export default function App() {
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <View style={styles.container}>
-          <StatusBar style="light" />
+          <StatusBar style="auto" />
           <Navigation />
         </View>
       </SafeAreaProvider>

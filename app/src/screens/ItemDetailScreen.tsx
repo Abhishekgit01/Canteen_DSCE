@@ -1,22 +1,24 @@
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
   Image,
-  TouchableOpacity,
   ScrollView,
-  Dimensions,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AppIcon from '../components/AppIcon';
 import { useCartStore } from '../stores/cartStore';
 import { RootStackNavigationProp, RootStackRouteProp } from '../types';
-
-const { width } = Dimensions.get('window');
+import { palette, shadows } from '../theme';
 
 export default function ItemDetailScreen() {
   const route = useRoute<RootStackRouteProp<'ItemDetail'>>();
   const navigation = useNavigation<RootStackNavigationProp<'ItemDetail'>>();
+  const insets = useSafeAreaInsets();
   const { item } = route.params;
   const { addItem } = useCartStore();
 
@@ -25,7 +27,7 @@ export default function ItemDetailScreen() {
   const [scheduledTime, setScheduledTime] = useState('');
 
   const generateTimeSlots = () => {
-    const slots = [];
+    const slots: string[] = [];
     const now = new Date();
     now.setMinutes(now.getMinutes() + 15);
     const end = new Date();
@@ -37,13 +39,14 @@ export default function ItemDetailScreen() {
       slots.push(`${hours}:${minutes}`);
       now.setMinutes(now.getMinutes() + 15);
     }
+
     return slots;
   };
 
   const timeSlots = generateTimeSlots();
 
-  const handleAddToCart = () => {
-    addItem({
+  const handleAddToCart = async () => {
+    await addItem({
       menuItem: item,
       quantity,
       tempPreference: selectedTemp,
@@ -53,89 +56,112 @@ export default function ItemDetailScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.imageContainer}>
-          <Image source={{ uri: item.imageUrl }} style={styles.image} />
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Text style={styles.backText}>←</Text>
-          </TouchableOpacity>
+    <View style={styles.screen}>
+      <StatusBar style="light" />
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
+      >
+        <View style={styles.hero}>
+          <Image source={{ uri: item.imageUrl }} style={styles.heroImage} />
+          <View style={[styles.heroOverlay, { paddingTop: insets.top + 10 }]}>
+            <TouchableOpacity activeOpacity={0.9} style={styles.backButton} onPress={() => navigation.goBack()}>
+              <AppIcon name="arrow-left" size={20} color={palette.surface} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.content}>
-          <Text style={styles.name}>{item.name}</Text>
-          <Text style={styles.description}>{item.description}</Text>
-
-          <View style={styles.macros}>
-            <View style={styles.macroItem}>
-              <Text style={styles.macroValue}>{item.calories}</Text>
-              <Text style={styles.macroLabel}>calories</Text>
-            </View>
-          </View>
-
-          {item.tempOptions.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Temperature</Text>
-              <View style={styles.tempContainer}>
-                {item.tempOptions.map((temp) => (
-                  <TouchableOpacity
-                    key={temp}
-                    style={[styles.tempChip, selectedTemp === temp && styles.activeTempChip]}
-                    onPress={() => setSelectedTemp(temp)}
-                  >
-                    <Text style={[styles.tempText, selectedTemp === temp && styles.activeTempText]}>
-                      {temp.charAt(0).toUpperCase() + temp.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pickup Time</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {timeSlots.map((time) => (
-                <TouchableOpacity
-                  key={time}
-                  style={[styles.timeChip, scheduledTime === time && styles.activeTimeChip]}
-                  onPress={() => setScheduledTime(time)}
-                >
-                  <Text style={[styles.timeText, scheduledTime === time && styles.activeTimeText]}>
-                    {time}
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryHeader}>
+              <View style={styles.summaryMeta}>
+                <View style={styles.categoryBadge}>
+                  <Text style={styles.categoryBadgeText}>
+                    {item.category.charAt(0).toUpperCase() + item.category.slice(1)}
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+                </View>
+                <Text style={styles.calorieText}>{item.calories} cal</Text>
+              </View>
+              <Text style={styles.title}>{item.name}</Text>
+              <Text style={styles.description}>{item.description}</Text>
+            </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quantity</Text>
-            <View style={styles.quantityContainer}>
-              <TouchableOpacity
-                style={styles.quantityButton}
-                onPress={() => setQuantity(Math.max(1, quantity - 1))}
-              >
-                <Text style={styles.quantityButtonText}>-</Text>
-              </TouchableOpacity>
-              <Text style={styles.quantityText}>{quantity}</Text>
-              <TouchableOpacity
-                style={styles.quantityButton}
-                onPress={() => setQuantity(quantity + 1)}
-              >
-                <Text style={styles.quantityButtonText}>+</Text>
-              </TouchableOpacity>
+            {item.tempOptions.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Temperature</Text>
+                <View style={styles.chipWrap}>
+                  {item.tempOptions.map((temp) => {
+                    const active = selectedTemp === temp;
+                    return (
+                      <TouchableOpacity
+                        key={temp}
+                        activeOpacity={0.92}
+                        style={[styles.choiceChip, active && styles.choiceChipActive]}
+                        onPress={() => setSelectedTemp(temp)}
+                      >
+                        <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>
+                          {temp.charAt(0).toUpperCase() + temp.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Pickup Time</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slotList}>
+                {timeSlots.map((time) => {
+                  const active = (scheduledTime || timeSlots[0]) === time;
+                  return (
+                    <TouchableOpacity
+                      key={time}
+                      activeOpacity={0.92}
+                      style={[styles.timeChip, active && styles.timeChipActive]}
+                      onPress={() => setScheduledTime(time)}
+                    >
+                      <Text style={[styles.timeChipText, active && styles.timeChipTextActive]}>
+                        {time}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Quantity</Text>
+              <View style={styles.quantityRow}>
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  style={styles.quantityButton}
+                  onPress={() => setQuantity(Math.max(1, quantity - 1))}
+                >
+                  <AppIcon name="minus" size={16} color={palette.surface} />
+                </TouchableOpacity>
+                <Text style={styles.quantityValue}>{quantity}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  style={styles.quantityButton}
+                  onPress={() => setQuantity(quantity + 1)}
+                >
+                  <AppIcon name="plus" size={16} color={palette.surface} />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <View style={styles.priceContainer}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalPrice}>₹{item.price * quantity}</Text>
+      <View style={[styles.footer, { paddingBottom: 18 + insets.bottom }]}>
+        <View>
+          <Text style={styles.footerLabel}>Total</Text>
+          <Text style={styles.footerPrice}>₹{item.price * quantity}</Text>
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={handleAddToCart}>
+        <TouchableOpacity activeOpacity={0.92} style={styles.addButton} onPress={() => void handleAddToCart()}>
+          <AppIcon name="cart-outline" size={18} color={palette.surface} />
           <Text style={styles.addButtonText}>Add to Cart</Text>
         </TouchableOpacity>
       </View>
@@ -144,167 +170,186 @@ export default function ItemDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: '#0a0f1e',
+    backgroundColor: palette.background,
   },
-  imageContainer: {
+  hero: {
     position: 'relative',
+    backgroundColor: palette.brand,
   },
-  image: {
-    width: width,
-    height: 300,
-    backgroundColor: '#141929',
+  heroImage: {
+    width: '100%',
+    aspectRatio: 1.12,
+    backgroundColor: palette.brand,
+  },
+  heroOverlay: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
   },
   backButton: {
-    position: 'absolute',
-    top: 60,
-    left: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(10, 15, 30, 0.8)',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(26,26,26,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  backText: {
-    color: '#ffffff',
-    fontSize: 24,
   },
   content: {
-    padding: 20,
-  },
-  name: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  description: {
-    fontSize: 14,
-    color: '#8892a4',
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  macros: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 24,
-  },
-  macroItem: {
-    backgroundColor: '#141929',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
+    marginTop: -28,
   },
-  macroValue: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 16,
+  summaryCard: {
+    backgroundColor: palette.surface,
+    borderRadius: 28,
+    padding: 18,
+    gap: 18,
+    ...shadows.floating,
   },
-  macroLabel: {
-    color: '#8892a4',
-    fontSize: 12,
+  summaryHeader: {
+    gap: 8,
   },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 12,
-  },
-  tempContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  tempChip: {
-    backgroundColor: '#141929',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  activeTempChip: {
-    backgroundColor: '#f97316',
-  },
-  tempText: {
-    color: '#8892a4',
-    fontWeight: '600',
-  },
-  activeTempText: {
-    color: '#ffffff',
-  },
-  timeChip: {
-    backgroundColor: '#141929',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginRight: 8,
-  },
-  activeTimeChip: {
-    backgroundColor: '#f97316',
-  },
-  timeText: {
-    color: '#8892a4',
-    fontWeight: '600',
-  },
-  activeTimeText: {
-    color: '#ffffff',
-  },
-  quantityContainer: {
+  summaryMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  categoryBadge: {
+    backgroundColor: palette.warningSoft,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  categoryBadgeText: {
+    color: palette.accent,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  calorieText: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  title: {
+    color: palette.ink,
+    fontSize: 28,
+    fontWeight: '900',
+    lineHeight: 32,
+  },
+  description: {
+    color: palette.muted,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  section: {
+    gap: 12,
+  },
+  sectionTitle: {
+    color: palette.ink,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  chipWrap: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  choiceChip: {
+    backgroundColor: palette.surfaceMuted,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 14,
+  },
+  choiceChipActive: {
+    backgroundColor: palette.brand,
+  },
+  choiceChipText: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  choiceChipTextActive: {
+    color: palette.surface,
+  },
+  slotList: {
+    gap: 10,
+    paddingRight: 6,
+  },
+  timeChip: {
+    backgroundColor: palette.surfaceMuted,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 14,
+  },
+  timeChipActive: {
+    backgroundColor: palette.accent,
+  },
+  timeChipText: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  timeChipTextActive: {
+    color: palette.surface,
+  },
+  quantityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
   },
   quantityButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#141929',
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    backgroundColor: palette.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quantityButtonText: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  quantityText: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '700',
-    minWidth: 40,
+  quantityValue: {
+    color: palette.ink,
+    fontSize: 22,
+    fontWeight: '900',
+    minWidth: 28,
     textAlign: 'center',
   },
   footer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(250,248,245,0.96)',
+    paddingTop: 14,
+    paddingHorizontal: 16,
     flexDirection: 'row',
-    padding: 16,
-    backgroundColor: '#141929',
-    gap: 16,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 14,
   },
-  priceContainer: {
-    flex: 1,
-  },
-  totalLabel: {
-    color: '#8892a4',
+  footerLabel: {
+    color: palette.muted,
     fontSize: 12,
   },
-  totalPrice: {
-    color: '#ffffff',
+  footerPrice: {
+    color: palette.ink,
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: '900',
+    marginTop: 2,
   },
   addButton: {
-    backgroundColor: '#f97316',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-    justifyContent: 'center',
+    backgroundColor: palette.brand,
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    ...shadows.floating,
   },
   addButtonText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 16,
+    color: palette.surface,
+    fontSize: 15,
+    fontWeight: '800',
   },
 });

@@ -74,8 +74,8 @@ api.interceptors.response.use(
 export default api;
 
 export const authApi = {
-  login: (email: string, password: string) =>
-    api.post('/auth/login', { email, password }),
+  login: (usn: string, password: string) =>
+    api.post('/auth/login', { usn, password }),
 };
 
 export const menuApi = {

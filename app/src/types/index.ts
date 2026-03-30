@@ -100,6 +100,7 @@ export type RootStackParamList = {
   Auth: undefined;
   Otp: { email: string };
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
+  Search: undefined;
   ItemDetail: { item: MenuItem };
   Payment: PaymentInitResponse;
   OrderQR: { orderId: string; qrToken: string };

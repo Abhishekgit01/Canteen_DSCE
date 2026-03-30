@@ -9,9 +9,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { API_CONFIG_ERROR, authApi } from '../api';
 import { useAuthStore } from '../stores/authStore';
 import { RootStackScreenProps } from '../types';
+import { palette, shadows } from '../theme';
 
 export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>) {
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -143,9 +145,12 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
+      <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.logo}>DSCE</Text>
-        <Text style={styles.subtitle}>Canteen App</Text>
+        <View style={styles.logoWrap}>
+          <Text style={styles.logo}>DSCE</Text>
+          <Text style={styles.subtitle}>Canteen App</Text>
+        </View>
 
         <View style={styles.tabContainer}>
           <TouchableOpacity
@@ -252,96 +257,104 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0f1e',
+    backgroundColor: palette.background,
   },
   scroll: {
     padding: 24,
     paddingTop: 60,
   },
+  logoWrap: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
   logo: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#f97316',
+    fontSize: 38,
+    fontWeight: '900',
+    color: palette.brand,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 18,
-    color: '#ffffff',
+    color: palette.muted,
     textAlign: 'center',
-    marginBottom: 32,
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: '#141929',
-    borderRadius: 12,
+    backgroundColor: palette.surface,
+    borderRadius: 16,
     padding: 4,
     marginBottom: 24,
+    ...shadows.card,
   },
   tab: {
     flex: 1,
     paddingVertical: 12,
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 12,
   },
   activeTab: {
-    backgroundColor: '#f97316',
+    backgroundColor: palette.brand,
   },
   tabText: {
-    color: '#8892a4',
-    fontWeight: '600',
+    color: palette.muted,
+    fontWeight: '700',
   },
   activeTabText: {
-    color: '#ffffff',
+    color: palette.surface,
   },
   form: {
     gap: 16,
   },
   lookupCard: {
-    backgroundColor: '#141929',
-    borderRadius: 12,
+    backgroundColor: palette.surface,
+    borderRadius: 18,
     padding: 16,
     gap: 6,
+    ...shadows.card,
   },
   lookupLabel: {
-    color: '#8892a4',
+    color: palette.muted,
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
   lookupValue: {
-    color: '#ffffff',
+    color: palette.ink,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   lookupError: {
-    color: '#ef4444',
+    color: palette.danger,
     fontSize: 13,
   },
   input: {
-    backgroundColor: '#141929',
-    borderRadius: 12,
+    backgroundColor: palette.surface,
+    borderRadius: 18,
     padding: 16,
-    color: '#ffffff',
+    color: palette.ink,
     fontSize: 16,
+    ...shadows.card,
   },
   button: {
-    backgroundColor: '#f97316',
-    borderRadius: 12,
+    backgroundColor: palette.accent,
+    borderRadius: 18,
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
+    ...shadows.floating,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    color: '#ffffff',
-    fontWeight: '700',
+    color: palette.surface,
+    fontWeight: '800',
     fontSize: 16,
   },
   error: {
-    color: '#ef4444',
+    color: palette.danger,
     textAlign: 'center',
     marginBottom: 16,
+    fontWeight: '700',
   },
 });

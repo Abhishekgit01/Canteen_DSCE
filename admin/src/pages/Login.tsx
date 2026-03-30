@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import './Login.css';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
+  const [usn, setUsn] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -17,7 +17,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      await login(email, password);
+      await login(usn, password);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed');
@@ -32,12 +32,13 @@ export default function LoginPage() {
         <h1>DSCE Canteen Admin</h1>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Email</label>
+            <label>USN</label>
             <input
-              type="email"
+              type="text"
               className="input"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={usn}
+              onChange={(e) => setUsn(e.target.value.toUpperCase())}
+              autoCapitalize="characters"
               required
             />
           </div>

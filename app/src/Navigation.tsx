@@ -3,11 +3,13 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, View, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import SplashScreen from './screens/SplashScreen';
 import AuthScreen from './screens/AuthScreen';
 import OtpScreen from './screens/OtpScreen';
 import HomeScreen from './screens/HomeScreen';
+import SearchScreen from './screens/SearchScreen';
 import ItemDetailScreen from './screens/ItemDetailScreen';
 import CartScreen from './screens/CartScreen';
 import PaymentScreen from './screens/PaymentScreen';
@@ -20,39 +22,64 @@ import { connectSocket, disconnectSocket } from './api/socket';
 import { useAuthStore } from './stores/authStore';
 import { useCartStore } from './stores/cartStore';
 import { MainTabParamList, RootStackParamList } from './types';
+import { palette, shadows } from './theme';
+import AppIcon from './components/AppIcon';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 function TabIcon({ name, focused }: { name: keyof MainTabParamList; focused: boolean }) {
-  const icons: Record<keyof MainTabParamList, string> = {
-    Home: '🏠',
-    Cart: '🛒',
-    Orders: '📋',
-    Profile: '👤',
-    Scanner: '📷',
+  const labels: Record<keyof MainTabParamList, string> = {
+    Home: 'CANTEEN',
+    Cart: 'CART',
+    Orders: 'ORDERS',
+    Profile: 'PROFILE',
+    Scanner: 'SCAN',
+  };
+  const colors = {
+    active: palette.accent,
+    inactive: '#A3A3A3',
+  };
+
+  const iconProps = {
+    size: 20,
+    color: focused ? colors.active : colors.inactive,
+  };
+
+  const icons: Record<keyof MainTabParamList, React.ReactNode> = {
+    Home: <AppIcon name="home" {...iconProps} />,
+    Cart: <AppIcon name="shopping-bag" {...iconProps} />,
+    Orders: <AppIcon name="receipt-text-outline" {...iconProps} />,
+    Profile: <AppIcon name="user" {...iconProps} />,
+    Scanner: <AppIcon name="camera" {...iconProps} />,
   };
 
   return (
-    <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
-      <Text style={styles.tabIconText}>{icons[name]}</Text>
+    <View style={styles.tabItem}>
+      {focused ? <View style={styles.tabIndicator} /> : <View style={styles.tabIndicatorSpacer} />}
+      <View style={[styles.tabIconWrap, focused && styles.tabIconActive]}>
+        {icons[name]}
+      </View>
+      <Text style={[styles.tabLabel, focused ? styles.tabLabelActive : styles.tabLabelInactive]}>
+        {labels[name]}
+      </Text>
     </View>
   );
 }
 
 function MainTabs() {
   const { user } = useAuthStore();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,
-        tabBarStyle: styles.tabBar,
-        tabBarShowLabel: true,
-        tabBarLabelStyle: styles.tabLabel,
-        tabBarActiveTintColor: '#f97316',
-        tabBarInactiveTintColor: '#8892a4',
+        tabBarStyle: [styles.tabBar, { height: 72 + insets.bottom, paddingBottom: 8 + insets.bottom }],
+        tabBarShowLabel: false,
+        tabBarItemStyle: styles.tabBarItem,
         headerShown: false,
+        tabBarHideOnKeyboard: true,
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
@@ -97,6 +124,7 @@ export default function Navigation() {
         {token && user ? (
           <>
             <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="Search" component={SearchScreen} />
             <Stack.Screen name="ItemDetail" component={ItemDetailScreen} />
             <Stack.Screen name="Payment" component={PaymentScreen} />
             <Stack.Screen name="OrderQR" component={OrderQRScreen} />
@@ -115,23 +143,48 @@ export default function Navigation() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: '#141929',
+    backgroundColor: 'rgba(255,255,255,0.98)',
     borderTopWidth: 0,
-    paddingBottom: 8,
-    paddingTop: 8,
+    paddingTop: 6,
+    ...shadows.floating,
   },
-  tabLabel: {
-    fontSize: 12,
-    fontWeight: '600',
+  tabBarItem: {
+    paddingVertical: 0,
   },
-  tabIcon: {
-    padding: 4,
+  tabItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  tabIndicator: {
+    width: 22,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: palette.accent,
+  },
+  tabIndicatorSpacer: {
+    width: 22,
+    height: 3,
+  },
+  tabIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabIconActive: {
-    backgroundColor: 'rgba(249, 115, 22, 0.2)',
-    borderRadius: 8,
+    backgroundColor: 'rgba(245,130,31,0.12)',
   },
-  tabIconText: {
-    fontSize: 20,
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.7,
+  },
+  tabLabelActive: {
+    color: palette.accent,
+  },
+  tabLabelInactive: {
+    color: '#A3A3A3',
   },
 });

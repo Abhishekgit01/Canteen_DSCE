@@ -13,6 +13,49 @@ import { PaymentMode } from '../types';
 const { width } = Dimensions.get('window');
 const SCAN_AREA = width * 0.6;
 
+function decodeBase64Url(value: string) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+
+  let output = '';
+  let bc = 0;
+  let bs: number | undefined;
+  let buffer: number;
+  let index = 0;
+
+  while ((buffer = chars.indexOf(padded.charAt(index++))) !== -1) {
+    if (buffer === 64) {
+      break;
+    }
+
+    bs = bc % 4 ? (bs ?? 0) * 64 + buffer : buffer;
+    if (bc++ % 4) {
+      output += String.fromCharCode(255 & ((bs ?? 0) >> ((-2 * bc) & 6)));
+    }
+  }
+
+  try {
+    return decodeURIComponent(
+      output
+        .split('')
+        .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+        .join(''),
+    );
+  } catch {
+    return output;
+  }
+}
+
+function getQrPayload(token: string) {
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    throw new Error('Invalid token format');
+  }
+
+  return JSON.parse(decodeBase64Url(parts[1])) as { orderId?: string };
+}
+
 export default function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(true);
@@ -40,9 +83,12 @@ export default function ScannerScreen() {
     setScanning(false);
 
     try {
-      // Decode JWT to get orderId
-      const payload = JSON.parse(atob(data.split('.')[1]));
+      const payload = getQrPayload(data);
       const orderId = payload.orderId;
+
+      if (!orderId) {
+        throw new Error('Missing order ID');
+      }
 
       const response = await orderApi.fulfillOrder(orderId, data);
       setResult({

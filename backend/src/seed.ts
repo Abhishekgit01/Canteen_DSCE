@@ -158,6 +158,36 @@ const menuItems = [
     tempOptions: ['normal'],
     isAvailable: true,
   },
+  {
+    name: 'Test Peri Peri Fries',
+    description: 'Crispy fries tossed in peri peri seasoning with a side of garlic mayo',
+    imageUrl: 'https://images.unsplash.com/photo-1576107232684-1279f390859f?w=400',
+    price: 85,
+    calories: 320,
+    category: 'snacks',
+    tempOptions: ['normal', 'hot'],
+    isAvailable: true,
+  },
+  {
+    name: 'Test Iced Mocha',
+    description: 'Cold coffee blended with chocolate and topped with a light foam finish',
+    imageUrl: 'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=400',
+    price: 70,
+    calories: 210,
+    category: 'beverages',
+    tempOptions: ['cold'],
+    isAvailable: true,
+  },
+  {
+    name: 'Test Corn Cheese Puff',
+    description: 'Buttery puff pastry packed with sweet corn, cheese, and cracked pepper',
+    imageUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400',
+    price: 35,
+    calories: 260,
+    category: 'snacks',
+    tempOptions: ['normal', 'hot'],
+    isAvailable: true,
+  },
 ];
 
 async function seed() {

@@ -8,9 +8,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { authApi } from '../api';
 import { useAuthStore } from '../stores/authStore';
 import { RootStackScreenProps } from '../types';
+import { palette, shadows } from '../theme';
 
 export default function OtpScreen({ route, navigation }: RootStackScreenProps<'Otp'>) {
   const { email } = route.params;
@@ -81,6 +83,7 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
+      <StatusBar style="dark" />
       <View style={styles.content}>
         <Text style={styles.title}>Enter OTP</Text>
         <Text style={styles.subtitle}>Enter the 6-digit code sent to {email}</Text>
@@ -124,7 +127,7 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0f1e',
+    backgroundColor: palette.background,
   },
   content: {
     flex: 1,
@@ -133,13 +136,13 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: '#ffffff',
+    fontWeight: '800',
+    color: palette.ink,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
-    color: '#8892a4',
+    color: palette.muted,
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 32,
@@ -153,39 +156,42 @@ const styles = StyleSheet.create({
   codeInput: {
     width: 48,
     height: 56,
-    backgroundColor: '#141929',
-    borderRadius: 12,
+    backgroundColor: palette.surface,
+    borderRadius: 16,
     textAlign: 'center',
-    color: '#ffffff',
+    color: palette.ink,
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: '800',
+    ...shadows.card,
   },
   button: {
-    backgroundColor: '#f97316',
-    borderRadius: 12,
+    backgroundColor: palette.accent,
+    borderRadius: 18,
     padding: 16,
     alignItems: 'center',
+    ...shadows.floating,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    color: '#ffffff',
-    fontWeight: '700',
+    color: palette.surface,
+    fontWeight: '800',
     fontSize: 16,
   },
   error: {
-    color: '#ef4444',
+    color: palette.danger,
     textAlign: 'center',
     marginBottom: 16,
+    fontWeight: '700',
   },
   resend: {
-    color: '#f97316',
+    color: palette.brand,
     textAlign: 'center',
     marginTop: 24,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   resendDisabled: {
-    color: '#8892a4',
+    color: palette.muted,
   },
 });

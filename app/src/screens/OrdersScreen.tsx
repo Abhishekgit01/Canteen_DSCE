@@ -1,52 +1,67 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  FlatList,
   ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { orderApi } from '../api';
+import AppIcon from '../components/AppIcon';
 import { MainTabNavigationProp, Order } from '../types';
+import { palette, shadows } from '../theme';
 
 function getErrorMessage(error: any) {
   return error?.response?.data?.error || 'Could not open this order right now.';
 }
 
+const getStatusTheme = (status: Order['status']) => {
+  switch (status) {
+    case 'paid':
+      return { backgroundColor: palette.successSoft, color: palette.success, label: 'Paid' };
+    case 'preparing':
+      return { backgroundColor: palette.warningSoft, color: palette.accent, label: 'Preparing' };
+    case 'ready':
+      return { backgroundColor: palette.infoSoft, color: palette.info, label: 'Ready' };
+    case 'fulfilled':
+      return { backgroundColor: palette.successSoft, color: palette.success, label: 'Collected' };
+    case 'failed':
+      return { backgroundColor: palette.dangerSoft, color: palette.danger, label: 'Failed' };
+    default:
+      return { backgroundColor: palette.surfaceMuted, color: palette.muted, label: 'Pending' };
+  }
+};
+
 export default function OrdersScreen() {
   const navigation = useNavigation<MainTabNavigationProp<'Orders'>>();
+  const insets = useSafeAreaInsets();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [openingOrderId, setOpeningOrderId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
-    fetchOrders();
+    void fetchOrders();
   }, []);
 
   const fetchOrders = async () => {
     try {
       setErrorMessage('');
       const response = await orderApi.getMyOrders();
-      setOrders(response.data);
+      const sortedOrders = [...response.data].sort(
+        (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+      );
+      setOrders(sortedOrders);
     } catch (error) {
       console.error('Failed to fetch orders:', error);
       setErrorMessage(getErrorMessage(error));
     } finally {
       setLoading(false);
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'paid': return '#22c55e';
-      case 'preparing': return '#f97316';
-      case 'ready': return '#3b82f6';
-      case 'fulfilled': return '#10b981';
-      case 'failed': return '#ef4444';
-      default: return '#8892a4';
     }
   };
 
@@ -75,125 +90,233 @@ export default function OrdersScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: Order }) => (
-    <TouchableOpacity
-      style={styles.orderCard}
-      onPress={() => handleOrderPress(item)}
-    >
-      <View style={styles.orderHeader}>
-        <Text style={styles.orderId}>Order #{item.id.slice(-6)}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-            {item.status}
-          </Text>
-        </View>
-      </View>
-      <Text style={styles.orderDate}>{new Date(item.createdAt).toLocaleDateString()}</Text>
-      <Text style={styles.orderItems}>
-        {item.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}
-      </Text>
-      {openingOrderId === item.id ? (
-        <View style={styles.loadingRow}>
-          <ActivityIndicator color="#f97316" size="small" />
-          <Text style={styles.loadingText}>Opening QR...</Text>
-        </View>
-      ) : null}
-      <Text style={styles.orderTotal}>₹{item.totalAmount}</Text>
-    </TouchableOpacity>
-  );
-
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>My Orders</Text>
-      </View>
-
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+    <View style={styles.screen}>
+      <StatusBar style="dark" />
 
       <FlatList
         data={orders}
-        renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        refreshing={loading}
-        onRefresh={fetchOrders}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingTop: insets.top + 12, paddingBottom: 110 + insets.bottom },
+        ]}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={fetchOrders} tintColor={palette.accent} />
+        }
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <Text style={styles.title}>Your Orders</Text>
+            <Text style={styles.subtitle}>Track live orders and reopen your QR any time.</Text>
+            {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+          </View>
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator size="large" color={palette.accent} />
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIcon}>
+                <AppIcon name="receipt-text-outline" size={28} color={palette.brand} />
+              </View>
+              <Text style={styles.emptyTitle}>No orders yet</Text>
+              <Text style={styles.emptyText}>
+                Once you place your first canteen order, it will show up here with its live status.
+              </Text>
+            </View>
+          )
+        }
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        renderItem={({ item }) => {
+          const statusTheme = getStatusTheme(item.status);
+          const itemSummary = item.items.map((entry) => `${entry.quantity}x ${entry.name}`).join(' · ');
+          const interactive = ['paid', 'preparing', 'ready'].includes(item.status);
+
+          return (
+            <TouchableOpacity
+              activeOpacity={interactive ? 0.94 : 1}
+              style={styles.orderCard}
+              onPress={() => void handleOrderPress(item)}
+            >
+              <View style={styles.orderHeader}>
+                <View>
+                  <Text style={styles.orderId}>Order #{item.id.slice(-6).toUpperCase()}</Text>
+                  <Text style={styles.orderDate}>
+                    {new Date(item.createdAt).toLocaleString()}
+                  </Text>
+                </View>
+
+                <View style={[styles.statusBadge, { backgroundColor: statusTheme.backgroundColor }]}>
+                  <Text style={[styles.statusText, { color: statusTheme.color }]}>
+                    {statusTheme.label}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.orderItems} numberOfLines={2}>
+                {itemSummary}
+              </Text>
+
+              <View style={styles.footerRow}>
+                <View>
+                  <Text style={styles.totalCaption}>Total</Text>
+                  <Text style={styles.totalText}>₹{item.totalAmount}</Text>
+                </View>
+
+                {openingOrderId === item.id ? (
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator size="small" color={palette.accent} />
+                    <Text style={styles.actionText}>Opening QR...</Text>
+                  </View>
+                ) : interactive ? (
+                  <View style={styles.actionRow}>
+                    <Text style={styles.actionText}>Open pickup QR</Text>
+                    <AppIcon name="chevron-right" size={18} color={palette.accent} />
+                  </View>
+                ) : (
+                  <Text style={styles.secondaryAction}>
+                    {item.status === 'fulfilled' ? 'Collected successfully' : 'Awaiting update'}
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        }}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: '#0a0f1e',
+    backgroundColor: palette.background,
+  },
+  listContent: {
+    paddingHorizontal: 16,
   },
   header: {
-    padding: 16,
-    paddingTop: 60,
+    paddingBottom: 18,
+    gap: 6,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
+    color: palette.ink,
+    fontSize: 28,
+    fontWeight: '800',
   },
-  list: {
-    padding: 16,
+  subtitle: {
+    color: palette.muted,
+    fontSize: 14,
+    lineHeight: 20,
   },
   errorText: {
-    color: '#fda4af',
-    paddingHorizontal: 16,
-    marginBottom: 8,
+    color: palette.danger,
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  separator: {
+    height: 14,
   },
   orderCard: {
-    backgroundColor: '#141929',
-    borderRadius: 12,
+    backgroundColor: palette.surface,
+    borderRadius: 24,
     padding: 16,
-    marginBottom: 12,
+    gap: 14,
+    ...shadows.card,
   },
   orderHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    gap: 12,
+    alignItems: 'flex-start',
   },
   orderId: {
-    color: '#ffffff',
-    fontWeight: '600',
+    color: palette.ink,
     fontSize: 16,
+    fontWeight: '800',
+  },
+  orderDate: {
+    color: palette.muted,
+    fontSize: 12,
+    marginTop: 4,
   },
   statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
   },
   statusText: {
     fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  orderDate: {
-    color: '#8892a4',
-    fontSize: 12,
-    marginBottom: 8,
+    fontWeight: '800',
   },
   orderItems: {
-    color: '#ffffff',
+    color: palette.muted,
     fontSize: 14,
-    marginBottom: 8,
+    lineHeight: 20,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  totalCaption: {
+    color: palette.muted,
+    fontSize: 12,
+  },
+  totalText: {
+    color: palette.ink,
+    fontSize: 20,
+    fontWeight: '900',
+    marginTop: 3,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  actionText: {
+    color: palette.accent,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  secondaryAction: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: '600',
   },
   loadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 8,
   },
-  loadingText: {
-    color: '#f8fafc',
-    fontSize: 12,
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingTop: 60,
+    gap: 12,
   },
-  orderTotal: {
-    color: '#f97316',
-    fontWeight: '700',
-    fontSize: 16,
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: palette.warningSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyTitle: {
+    color: palette.ink,
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  emptyText: {
+    color: palette.muted,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
   },
 });
