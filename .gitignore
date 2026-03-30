@@ -1,3 +1,7 @@
+# Sensitive project files
+.orchids/
+.canteen-progress.md
+
 # Dependencies
 node_modules/
 */node_modules/
