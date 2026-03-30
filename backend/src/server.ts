@@ -101,10 +101,10 @@ mongoose.connect(MONGO_URI)
       console.log('🌱 Seeding database...');
       const salt = await bcrypt.genSalt(12);
       await User.create([
-        { email: 'admin@dsce.edu.in', passwordHash: await bcrypt.hash('Admin@123', salt), usn: 'ADMIN001', role: 'admin', isVerified: true },
-        { email: 'manager@dsce.edu.in', passwordHash: await bcrypt.hash('Manager@123', salt), usn: 'MGR001', role: 'manager', isVerified: true },
-        { email: 'staff@dsce.edu.in', passwordHash: await bcrypt.hash('Staff@123', salt), usn: 'STAFF001', role: 'staff', isVerified: true },
-        { email: 'test@dsce.edu.in', passwordHash: await bcrypt.hash('Test@123', salt), usn: '1DS22CS001', role: 'student', isVerified: true }
+        { name: 'Admin User', email: 'admin@dsce.edu.in', passwordHash: await bcrypt.hash('Admin@123', salt), usn: '1DS22AD001', role: 'admin', isVerified: true },
+        { name: 'Manager User', email: 'manager@dsce.edu.in', passwordHash: await bcrypt.hash('Manager@123', salt), usn: '1DS22MG001', role: 'manager', isVerified: true },
+        { name: 'Staff User', email: 'staff@dsce.edu.in', passwordHash: await bcrypt.hash('Staff@123', salt), usn: '1DS22SF001', role: 'staff', isVerified: true },
+        { name: 'Test Student', email: 'test@dsce.edu.in', passwordHash: await bcrypt.hash('Test@123', salt), usn: '1DS22CS001', role: 'student', isVerified: true }
       ]);
       console.log('✅ Users seeded');
     }
