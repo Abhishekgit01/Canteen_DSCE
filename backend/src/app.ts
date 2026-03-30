@@ -6,6 +6,7 @@ import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
 import dotenv from 'dotenv';
 import webhookRoutes from './routes/webhook.js';
+import mockPaymentRoutes from './routes/mockPayment.js';
 import paytmRoutes from './routes/paytm.js';
 import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
@@ -139,6 +140,7 @@ app.get('/', (_req, res) => {
 // Routes
 app.use('/webhook', webhookRoutes);
 app.use('/paytm', paytmRoutes);
+app.use('/payment/mock', mockPaymentRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/orders', orderRoutes);
