@@ -54,3 +54,12 @@ export const orderApi = {
   fulfillOrder: (id: string, qrToken: string) =>
     api.post(`/orders/${id}/fulfill`, { qrToken }),
 };
+
+export const paymentApi = {
+  createMockPayment: (data: { orderId?: string; items: any[] }) =>
+    api.post('/payment/mock/create', data),
+  verifyMockPayment: (data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
+    api.post('/payment/mock/verify', data),
+  getPaymentStatus: (orderId: string) =>
+    api.get(`/payment/mock/status/${orderId}`),
+};

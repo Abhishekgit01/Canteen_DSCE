@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { orderApi } from '../api';
+import { orderApi, paymentApi } from '../api';
 import { connectSocket } from '../api/socket';
 import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
@@ -38,6 +38,7 @@ export default function PaymentScreen() {
     setStatus('processing');
     
     try {
+      // Create order first
       const orderResponse = await orderApi.createOrder({
         items: items.map(item => ({
           menuItemId: item.menuItem.id,
@@ -47,13 +48,57 @@ export default function PaymentScreen() {
         scheduledTime: items[0]?.scheduledTime || '12:00',
       });
 
-      // Simulate Razorpay payment for demo
-      setTimeout(() => {
-        // In real app, would open Razorpay here
-        // For demo, we'll simulate successful payment
-      }, 2000);
+      const orderId = orderResponse.data.orderId;
+
+      // Create mock payment
+      const paymentResponse = await paymentApi.createMockPayment({
+        orderId,
+        items: items.map(item => ({
+          menuItemId: item.menuItem.id,
+          quantity: item.quantity,
+        })),
+      });
+
+      const { razorpayOrderId, amount: orderAmount, key } = paymentResponse.data;
+
+      // Simulate payment - in real app, this would open Razorpay checkout
+      Alert.alert(
+        'Test Payment',
+        `Order: ${razorpayOrderId}\nAmount: ₹${orderAmount / 100}\n\nClick OK to simulate successful payment.`,
+        [
+          { 
+            text: 'OK', 
+            onPress: async () => {
+              try {
+                // Verify payment
+                const verifyResponse = await paymentApi.verifyMockPayment({
+                  razorpay_order_id: razorpayOrderId,
+                  razorpay_payment_id: `pay_${Date.now()}`,
+                  razorpay_signature: 'mock_signature',
+                });
+
+                if (verifyResponse.data.success) {
+                  setStatus('success');
+                  clearCart();
+                  setTimeout(() => {
+                    navigation.navigate('OrderQR', { 
+                      orderId, 
+                      qrToken: verifyResponse.data.qrToken 
+                    });
+                  }, 1500);
+                }
+              } catch (error) {
+                console.error('Payment verification error:', error);
+                setStatus('error');
+                setLoading(false);
+              }
+            }
+          }
+        ]
+      );
 
     } catch (error) {
+      console.error('Payment error:', error);
       setStatus('error');
       setLoading(false);
     }
@@ -68,7 +113,7 @@ export default function PaymentScreen() {
         {status === 'idle' && (
           <TouchableOpacity style={styles.payButton} onPress={handlePayment} disabled={loading}>
             <Text style={styles.payButtonText}>
-              {loading ? 'Processing...' : 'Pay with Razorpay'}
+              {loading ? 'Processing...' : 'Pay with Razorpay (Test)'}
             </Text>
           </TouchableOpacity>
         )}
