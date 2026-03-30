@@ -16,32 +16,57 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor - handle 401
+// Response interceptor - handle 401 and token refresh
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
+    // If error is 401 and we haven't retried yet
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       const refreshToken = localStorage.getItem('refreshToken');
 
       if (refreshToken) {
         try {
+          console.log('Attempting token refresh...');
           const response = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
           const { accessToken } = response.data;
+          
+          // Store new token
           localStorage.setItem('accessToken', accessToken);
+          
+          // Update the failed request with new token
           originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+          
+          // Retry the original request
+          console.log('Token refreshed, retrying request...');
           return api(originalRequest);
-        } catch {
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
+          // Clear all auth data
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
           localStorage.removeItem('user');
+          
+          // Only redirect if not already on login page
+          if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/login';
+          }
+        }
+      } else {
+        // No refresh token, clear auth and redirect
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('user');
+        
+        if (!window.location.pathname.includes('/login')) {
           window.location.href = '/login';
         }
       }
     }
 
+    // For network errors or other issues, just reject
     return Promise.reject(error);
   }
 );
