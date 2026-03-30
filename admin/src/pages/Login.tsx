@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import './Login.css';
 
@@ -8,6 +9,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,6 +18,7 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
+      navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {
