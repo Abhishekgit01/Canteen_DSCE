@@ -18,6 +18,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import { MainTabNavigationProp, MenuItem } from '../types';
 import { palette, shadows } from '../theme';
+import { getDefaultPickupTime, getLunchRushInfo } from '../utils/pickupTime';
 
 const categories = [
   { key: 'All', label: 'All' },
@@ -26,14 +27,6 @@ const categories = [
   { key: 'beverages', label: 'Beverages' },
   { key: 'desserts', label: 'Desserts' },
 ];
-
-const getDefaultScheduledTime = () => {
-  const slot = new Date();
-  slot.setMinutes(slot.getMinutes() + 15);
-  const hours = slot.getHours().toString().padStart(2, '0');
-  const minutes = slot.getMinutes().toString().padStart(2, '0');
-  return `${hours}:${minutes}`;
-};
 
 export default function HomeScreen() {
   const navigation = useNavigation<MainTabNavigationProp<'Home'>>();
@@ -45,11 +38,11 @@ export default function HomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
-  const [timeLeft, setTimeLeft] = useState(38);
+  const [rushInfo, setRushInfo] = useState(() => getLunchRushInfo());
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setTimeLeft((current) => (current > 1 ? current - 1 : 45));
+      setRushInfo(getLunchRushInfo());
     }, 60000);
 
     return () => clearInterval(interval);
@@ -100,7 +93,7 @@ export default function HomeScreen() {
       menuItem: item,
       quantity: nextQuantity,
       tempPreference: existingItem?.tempPreference || item.tempOptions[0] || 'normal',
-      scheduledTime: existingItem?.scheduledTime || getDefaultScheduledTime(),
+      scheduledTime: existingItem?.scheduledTime || getDefaultPickupTime(),
     });
   };
 
@@ -144,16 +137,16 @@ export default function HomeScreen() {
           <View style={styles.heroTextBlock}>
             <View style={styles.heroTitleRow}>
               <AppIcon name="fire" size={18} color="#FFE3B1" />
-              <Text style={styles.heroTitle}>Lunch Rush</Text>
+            <Text style={styles.heroTitle}>Lunch Rush</Text>
             </View>
             <Text style={styles.heroSubtitle}>
-              Order before the queue builds up and pick it up on your way.
+              {rushInfo.subtitle}
             </Text>
           </View>
 
           <View style={styles.heroTimer}>
-            <Text style={styles.heroTimerValue}>{timeLeft}</Text>
-            <Text style={styles.heroTimerLabel}>MINS LEFT</Text>
+            <Text style={styles.heroTimerValue}>{rushInfo.minutes}</Text>
+            <Text style={styles.heroTimerLabel}>{rushInfo.label}</Text>
           </View>
         </View>
 
@@ -164,7 +157,7 @@ export default function HomeScreen() {
           </View>
           <View style={styles.infoHint}>
             <AppIcon name="clock" size={12} color={palette.muted} />
-            <Text style={styles.infoHintText}>Quick pickup in 15 mins</Text>
+            <Text style={styles.infoHintText}>Quick pickup from {getDefaultPickupTime()}</Text>
           </View>
         </View>
 

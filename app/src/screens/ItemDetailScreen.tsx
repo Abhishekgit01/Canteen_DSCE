@@ -14,6 +14,7 @@ import AppIcon from '../components/AppIcon';
 import { useCartStore } from '../stores/cartStore';
 import { RootStackNavigationProp, RootStackRouteProp } from '../types';
 import { palette, shadows } from '../theme';
+import { formatPickupTime, getDefaultPickupTime, getPickupTimeSlots } from '../utils/pickupTime';
 
 export default function ItemDetailScreen() {
   const route = useRoute<RootStackRouteProp<'ItemDetail'>>();
@@ -25,32 +26,15 @@ export default function ItemDetailScreen() {
   const [selectedTemp, setSelectedTemp] = useState(item.tempOptions[0] || 'normal');
   const [quantity, setQuantity] = useState(1);
   const [scheduledTime, setScheduledTime] = useState('');
-
-  const generateTimeSlots = () => {
-    const slots: string[] = [];
-    const now = new Date();
-    now.setMinutes(now.getMinutes() + 15);
-    const end = new Date();
-    end.setHours(20, 0, 0, 0);
-
-    while (now <= end) {
-      const hours = now.getHours().toString().padStart(2, '0');
-      const minutes = now.getMinutes().toString().padStart(2, '0');
-      slots.push(`${hours}:${minutes}`);
-      now.setMinutes(now.getMinutes() + 15);
-    }
-
-    return slots;
-  };
-
-  const timeSlots = generateTimeSlots();
+  const timeSlots = getPickupTimeSlots();
+  const selectedPickupTime = scheduledTime || timeSlots[0] || getDefaultPickupTime();
 
   const handleAddToCart = async () => {
     await addItem({
       menuItem: item,
       quantity,
       tempPreference: selectedTemp,
-      scheduledTime: scheduledTime || timeSlots[0],
+      scheduledTime: selectedPickupTime,
     });
     navigation.goBack();
   };
@@ -114,7 +98,7 @@ export default function ItemDetailScreen() {
               <Text style={styles.sectionTitle}>Pickup Time</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slotList}>
                 {timeSlots.map((time) => {
-                  const active = (scheduledTime || timeSlots[0]) === time;
+                  const active = selectedPickupTime === time;
                   return (
                     <TouchableOpacity
                       key={time}
@@ -123,7 +107,7 @@ export default function ItemDetailScreen() {
                       onPress={() => setScheduledTime(time)}
                     >
                       <Text style={[styles.timeChipText, active && styles.timeChipTextActive]}>
-                        {time}
+                        {formatPickupTime(time)}
                       </Text>
                     </TouchableOpacity>
                   );

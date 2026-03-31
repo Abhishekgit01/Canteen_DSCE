@@ -39,15 +39,20 @@ function formatAmount(amount: number) {
 }
 
 function getErrorMessage(error: any) {
-  return error?.response?.data?.error || error?.description || 'Payment failed. Please try again.';
+  return error?.response?.data?.error || error?.message || error?.description || 'Payment failed. Please try again.';
 }
 
 function getRazorpayErrorMessage(error: any) {
   return (
     error?.response?.data?.error ||
+    error?.message ||
     error?.description ||
     'Checkout was closed before confirmation. If money was debited, wait for automatic confirmation or retry.'
   );
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 type RazorpaySuccessResponse = {
@@ -79,6 +84,7 @@ export default function PaymentScreen() {
   const pulse = useRef(new Animated.Value(1)).current;
   const hasNavigatedRef = useRef(false);
   const razorpayStartedRef = useRef(false);
+  const [canCheckPaymentStatus, setCanCheckPaymentStatus] = useState(false);
 
   const shortOrderId = orderId.slice(-6).toUpperCase();
   const upiPayment = mode === 'upi_link' ? (payment as UpiLinkPaymentInitResponse) : null;
@@ -157,6 +163,38 @@ export default function PaymentScreen() {
     await navigateToOrderQr(qrToken);
   };
 
+  const waitForOrderQr = async (
+    pendingMessage = 'Payment received. Finalising your order and pickup QR...',
+  ) => {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      if (hasNavigatedRef.current) {
+        return;
+      }
+
+      const response = await orderApi.getOrder(orderId);
+      const qrToken = response.data?.qrToken;
+
+      if (typeof qrToken === 'string') {
+        await navigateToOrderQr(qrToken);
+        return;
+      }
+
+      if (response.data?.status === 'failed') {
+        throw new Error('Payment failed. Please retry or ask staff to check the order.');
+      }
+
+      setStatusMessage(pendingMessage);
+
+      if (attempt < 11) {
+        await delay(2500);
+      }
+    }
+
+    throw new Error(
+      'We are still checking your payment. If money was debited, tap "Check Payment Status" in a few seconds.',
+    );
+  };
+
   const handleMockPayment = async () => {
     const mockPayment = payment as MockPaymentInitResponse;
 
@@ -227,6 +265,7 @@ export default function PaymentScreen() {
     setIsSubmitting(true);
     setStatusMessage('Opening Razorpay...');
     setErrorMessage('');
+    setCanCheckPaymentStatus(false);
 
     try {
       const data = (await RazorpayCheckout.open({
@@ -251,19 +290,23 @@ export default function PaymentScreen() {
 
       setStatusMessage('Verifying payment...');
 
-      const response = await paymentApi.confirmRazorpayPayment(orderId, {
-        razorpay_payment_id: data.razorpay_payment_id,
-        razorpay_order_id: data.razorpay_order_id,
-        razorpay_signature: data.razorpay_signature,
-      });
+      try {
+        const response = await paymentApi.confirmRazorpayPayment(orderId, {
+          razorpay_payment_id: data.razorpay_payment_id,
+          razorpay_order_id: data.razorpay_order_id,
+          razorpay_signature: data.razorpay_signature,
+        });
 
-      const qrToken = response.data?.qrToken;
-      if (!qrToken) {
-        await fetchQrAndNavigate();
-        return;
+        const qrToken = response.data?.qrToken;
+        if (qrToken) {
+          await navigateToOrderQr(qrToken);
+          return;
+        }
+      } catch (error) {
+        console.warn('Immediate Razorpay confirmation failed, falling back to order polling.', error);
       }
 
-      await navigateToOrderQr(qrToken);
+      await waitForOrderQr();
     } catch (error) {
       if (hasNavigatedRef.current) {
         return;
@@ -272,6 +315,22 @@ export default function PaymentScreen() {
       setIsSubmitting(false);
       setStatusMessage(null);
       setErrorMessage(getRazorpayErrorMessage(error));
+      setCanCheckPaymentStatus(true);
+    }
+  };
+
+  const handleCheckPaymentStatus = async () => {
+    setIsSubmitting(true);
+    setStatusMessage('Checking your payment status...');
+    setErrorMessage('');
+
+    try {
+      await waitForOrderQr('Still checking with the canteen. Your QR will appear automatically once ready.');
+    } catch (error) {
+      setIsSubmitting(false);
+      setStatusMessage(null);
+      setErrorMessage(getErrorMessage(error));
+      setCanCheckPaymentStatus(true);
     }
   };
 
@@ -515,7 +574,9 @@ export default function PaymentScreen() {
             <View style={styles.razorpayCard}>
               <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
               <Text style={styles.mutedText}>Launching Razorpay checkout</Text>
-              <Text style={styles.mutedText}>Stay on this screen until payment is confirmed.</Text>
+              <Text style={styles.mutedText}>
+                Stay on this screen until payment is confirmed. First-time verification can take a few extra seconds.
+              </Text>
             </View>
 
             <TouchableOpacity
@@ -527,6 +588,16 @@ export default function PaymentScreen() {
                 {isSubmitting ? 'Waiting for confirmation...' : 'Open Razorpay Again'}
               </Text>
             </TouchableOpacity>
+
+            {canCheckPaymentStatus ? (
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => void handleCheckPaymentStatus()}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.secondaryButtonText}>Check Payment Status</Text>
+              </TouchableOpacity>
+            ) : null}
           </>
         ) : null}
 

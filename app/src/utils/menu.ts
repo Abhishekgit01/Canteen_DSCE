@@ -1,4 +1,5 @@
 import type { CartItem, MenuItem } from '../types';
+import { getDefaultPickupTime } from './pickupTime';
 
 type MenuCategory = MenuItem['category'];
 type TempOption = MenuItem['tempOptions'][number];
@@ -18,14 +19,6 @@ function toTrimmedString(value: unknown) {
 function toNumber(value: unknown, fallback = 0) {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : fallback;
-}
-
-function getFallbackScheduledTime() {
-  const slot = new Date();
-  slot.setMinutes(slot.getMinutes() + 15);
-  const hours = slot.getHours().toString().padStart(2, '0');
-  const minutes = slot.getMinutes().toString().padStart(2, '0');
-  return `${hours}:${minutes}`;
 }
 
 export function getMenuItemId(value: unknown) {
@@ -96,7 +89,7 @@ export function normalizeCartItem(value: unknown): CartItem | null {
       ? requestedTemp
       : menuItem.tempOptions[0] || 'normal';
 
-  const scheduledTime = toTrimmedString(value.scheduledTime) || getFallbackScheduledTime();
+  const scheduledTime = toTrimmedString(value.scheduledTime) || getDefaultPickupTime();
 
   return {
     menuItem,

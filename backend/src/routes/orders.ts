@@ -1,10 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { io } from '../server.js';
 import { MenuItem, Order, User } from '../models/index.js';
 import { createRazorpayOrder, initiatePayment } from '../services/payment.service.js';
-import { finalizePaidOrder } from '../services/order-payment.service.js';
+import { finalizeOrder, finalizePaidOrder } from '../services/order-payment.service.js';
 import { serializeOrder } from '../utils/order.utils.js';
 import { getPaymentMode, PaymentMode } from '../utils/paymentMode.js';
 import { hashQrToken, verifyQrToken } from '../utils/qrToken.js';
@@ -159,6 +160,32 @@ function isRazorpayOrderCreationError(error: unknown) {
 
   const code = (error as { code?: unknown }).code;
   return code === 'RAZORPAY_CONFIG_MISSING' || code === 'RAZORPAY_ORDER_CREATE_FAILED';
+}
+
+function signaturesMatch(expected: string, received: string) {
+  const expectedBuffer = Buffer.from(expected);
+  const receivedBuffer = Buffer.from(received);
+
+  if (expectedBuffer.length !== receivedBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
+function verifyRazorpayPaymentSignature(
+  razorpayOrderId: string,
+  razorpayPaymentId: string,
+  signature: string,
+) {
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keySecret) {
+    return false;
+  }
+
+  const payload = `${razorpayOrderId}|${razorpayPaymentId}`;
+  const expected = crypto.createHmac('sha256', keySecret).update(payload).digest('hex');
+  return signaturesMatch(expected, signature);
 }
 
 router.get('/payment-config', requireAuth, (_req: AuthenticatedRequest, res: Response) => {
@@ -402,6 +429,75 @@ router.post(
       res.json({ success: true, orderId: String(order._id) });
     } catch {
       res.status(500).json({ error: 'Failed to confirm UPI payment' });
+    }
+  },
+);
+
+router.post(
+  '/:id/confirm-razorpay',
+  requireAuth,
+  requireRoles(['student']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      if (getPaymentMode() !== 'razorpay') {
+        return res.status(403).json({ error: 'Razorpay payments are not active' });
+      }
+
+      const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body as {
+        razorpay_payment_id?: string;
+        razorpay_order_id?: string;
+        razorpay_signature?: string;
+      };
+
+      if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+        return res.status(400).json({ error: 'Payment verification failed' });
+      }
+
+      const order = await findOwnedOrder(req.params.id, req.user!.id);
+      if (order === null) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (order === false) {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+
+      if (order.razorpayOrderId !== razorpay_order_id) {
+        console.error('Razorpay order mismatch during confirmation', {
+          orderId: req.params.id,
+          razorpayOrderId: razorpay_order_id,
+        });
+        return res.status(400).json({ error: 'Payment verification failed' });
+      }
+
+      if (
+        !verifyRazorpayPaymentSignature(
+          razorpay_order_id,
+          razorpay_payment_id,
+          razorpay_signature,
+        )
+      ) {
+        console.error('Razorpay signature mismatch', {
+          orderId: req.params.id,
+          razorpayOrderId: razorpay_order_id,
+        });
+        return res.status(400).json({ error: 'Payment verification failed' });
+      }
+
+      const finalized = await finalizeOrder(razorpay_order_id, {
+        razorpayPaymentId: razorpay_payment_id,
+      });
+
+      if (!finalized) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      return res.json({
+        order: finalized.serializedOrder,
+        qrToken: finalized.qrToken,
+      });
+    } catch {
+      return res.status(500).json({ error: 'Failed to confirm Razorpay payment' });
     }
   },
 );

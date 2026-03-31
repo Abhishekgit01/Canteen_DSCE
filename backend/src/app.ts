@@ -9,6 +9,7 @@ import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
 import adminRoutes from './routes/admin.js';
+import { razorpayWebhookHandler } from './routes/webhook.js';
 
 dotenv.config();
 
@@ -62,6 +63,9 @@ app.use(cors({
 //   legacyHeaders: false,
 // });
 // app.use('/api/auth/login', loginLimiter);
+
+// Razorpay webhook needs the raw body for signature verification.
+app.post('/webhook/razorpay', express.raw({ type: 'application/json' }), razorpayWebhookHandler);
 
 // 6. JSON body parser with size limit
 app.use(express.json({ limit: '10kb' }));

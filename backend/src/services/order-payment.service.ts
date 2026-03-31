@@ -47,6 +47,7 @@ export async function finalizePaidOrder(order: any, options: FinalizePaidOrderOp
     order,
     qrToken,
     serializedOrder,
+    alreadyFinalized: false,
   };
 }
 
@@ -91,6 +92,7 @@ export async function finalizeOrder(
       order,
       qrToken,
       serializedOrder: serializeOrder(order, { includeQrToken: true }),
+      alreadyFinalized: true,
     };
   }
 

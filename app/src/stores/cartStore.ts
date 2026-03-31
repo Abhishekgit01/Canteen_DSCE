@@ -5,9 +5,10 @@ import { getMenuItemId, normalizeCartItem } from '../utils/menu';
 
 interface CartState {
   items: CartItem[];
-  addItem: (item: CartItem) => void;
-  removeItem: (menuItemId: string) => void;
-  updateQuantity: (menuItemId: string, quantity: number) => void;
+  addItem: (item: CartItem) => Promise<void>;
+  removeItem: (menuItemId: string) => Promise<void>;
+  updateQuantity: (menuItemId: string, quantity: number) => Promise<void>;
+  setScheduledTime: (scheduledTime: string) => Promise<void>;
   clearCart: () => Promise<void>;
   loadCart: () => Promise<void>;
   total: () => number;
@@ -48,6 +49,12 @@ export const useCartStore = create<CartState>((set, get) => ({
         getMenuItemId(entry.menuItem) === menuItemId ? { ...entry, quantity } : entry,
       )
       .filter((entry) => entry.quantity > 0);
+    await AsyncStorage.setItem('cart', JSON.stringify(newItems));
+    set({ items: newItems });
+  },
+  setScheduledTime: async (scheduledTime) => {
+    const { items } = get();
+    const newItems = items.map((entry) => ({ ...entry, scheduledTime }));
     await AsyncStorage.setItem('cart', JSON.stringify(newItems));
     set({ items: newItems });
   },

@@ -18,26 +18,26 @@ import { useCartStore } from '../stores/cartStore';
 import { MainTabNavigationProp, MenuItem } from '../types';
 import { palette, shadows } from '../theme';
 import { getMenuItemId } from '../utils/menu';
+import {
+  formatPickupTime,
+  getDefaultPickupTime,
+  getLunchRushWindowLabel,
+  getPickupTimeSlots,
+} from '../utils/pickupTime';
 
 function getErrorMessage(error: any) {
   return error?.response?.data?.error || 'Could not create your order. Please try again.';
 }
 
-function getDefaultScheduledTime() {
-  const slot = new Date();
-  slot.setMinutes(slot.getMinutes() + 15);
-  const hours = slot.getHours().toString().padStart(2, '0');
-  const minutes = slot.getMinutes().toString().padStart(2, '0');
-  return `${hours}:${minutes}`;
-}
-
 export default function CartScreen() {
   const navigation = useNavigation<MainTabNavigationProp<'Cart'>>();
   const insets = useSafeAreaInsets();
-  const { items, addItem, updateQuantity, total } = useCartStore();
+  const { items, addItem, updateQuantity, setScheduledTime, total } = useCartStore();
   const [suggestedItems, setSuggestedItems] = useState<MenuItem[]>([]);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [selectedPickupTime, setSelectedPickupTime] = useState(items[0]?.scheduledTime || getDefaultPickupTime());
+  const pickupSlots = getPickupTimeSlots();
 
   useEffect(() => {
     const loadSuggestions = async () => {
@@ -52,6 +52,11 @@ export default function CartScreen() {
 
     void loadSuggestions();
   }, [items]);
+
+  useEffect(() => {
+    const currentPickupTime = items[0]?.scheduledTime || pickupSlots[0] || getDefaultPickupTime();
+    setSelectedPickupTime(currentPickupTime);
+  }, [items, pickupSlots]);
 
   const subtotal = total();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -81,7 +86,7 @@ export default function CartScreen() {
 
       const response = await orderApi.createOrder({
         items: orderItems,
-        scheduledTime: items[0]?.scheduledTime || getDefaultScheduledTime(),
+        scheduledTime: selectedPickupTime,
       });
 
       navigation.navigate('Payment', response.data);
@@ -100,8 +105,13 @@ export default function CartScreen() {
       menuItem: item,
       quantity: nextQuantity,
       tempPreference: existingItem?.tempPreference || item.tempOptions[0] || 'normal',
-      scheduledTime: existingItem?.scheduledTime || items[0]?.scheduledTime || '12:30',
+      scheduledTime: existingItem?.scheduledTime || selectedPickupTime || getDefaultPickupTime(),
     });
+  };
+
+  const handlePickupTimeChange = async (time: string) => {
+    setSelectedPickupTime(time);
+    await setScheduledTime(time);
   };
 
   if (items.length === 0) {
@@ -150,6 +160,41 @@ export default function CartScreen() {
         </View>
 
         <View style={styles.card}>
+          <View style={styles.pickupHeader}>
+            <View style={styles.pickupIconWrap}>
+              <AppIcon name="clock" size={18} color={palette.accent} />
+            </View>
+            <View style={styles.pickupTextWrap}>
+              <Text style={styles.sectionTitle}>Pickup Time</Text>
+              <Text style={styles.pickupHint}>
+                Selected for the whole order: {formatPickupTime(selectedPickupTime)}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.rushHint}>Lunch rush window: {getLunchRushWindowLabel()}</Text>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slotList}>
+            {pickupSlots.map((time) => {
+              const active = selectedPickupTime === time;
+
+              return (
+                <TouchableOpacity
+                  key={time}
+                  activeOpacity={0.92}
+                  style={[styles.timeChip, active && styles.timeChipActive]}
+                  onPress={() => void handlePickupTimeChange(time)}
+                >
+                  <Text style={[styles.timeChipText, active && styles.timeChipTextActive]}>
+                    {formatPickupTime(time)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        <View style={styles.card}>
           <Text style={styles.sectionTitle}>Your Order</Text>
           <View style={styles.cardStack}>
             {items.map((item) => (
@@ -161,7 +206,7 @@ export default function CartScreen() {
                     {item.menuItem.name}
                   </Text>
                   <Text style={styles.itemMeta}>
-                    {item.tempPreference.charAt(0).toUpperCase() + item.tempPreference.slice(1)} · Pickup {item.scheduledTime}
+                    {item.tempPreference.charAt(0).toUpperCase() + item.tempPreference.slice(1)} · Pickup {formatPickupTime(item.scheduledTime)}
                   </Text>
                   <Text style={styles.itemPrice}>₹{item.menuItem.price}</Text>
                 </View>
@@ -345,10 +390,57 @@ const styles = StyleSheet.create({
     gap: 14,
     ...shadows.card,
   },
+  pickupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  pickupIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: palette.warningSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickupTextWrap: {
+    flex: 1,
+    gap: 3,
+  },
+  pickupHint: {
+    color: palette.muted,
+    fontSize: 13,
+  },
+  rushHint: {
+    color: palette.accent,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   sectionTitle: {
     color: palette.ink,
     fontSize: 18,
     fontWeight: '800',
+  },
+  slotList: {
+    gap: 10,
+    paddingRight: 6,
+  },
+  timeChip: {
+    backgroundColor: palette.surfaceMuted,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 14,
+  },
+  timeChipActive: {
+    backgroundColor: palette.accent,
+  },
+  timeChipText: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  timeChipTextActive: {
+    color: palette.surface,
   },
   cardStack: {
     gap: 14,

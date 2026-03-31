@@ -17,16 +17,9 @@ import AppIcon from '../components/AppIcon';
 import { useCartStore } from '../stores/cartStore';
 import { MenuItem, RootStackNavigationProp } from '../types';
 import { palette, shadows } from '../theme';
+import { getDefaultPickupTime } from '../utils/pickupTime';
 
 const defaultRecentSearches = ['Maggi', 'Biryani', 'Cold Coffee'];
-
-const getDefaultScheduledTime = () => {
-  const slot = new Date();
-  slot.setMinutes(slot.getMinutes() + 15);
-  const hours = slot.getHours().toString().padStart(2, '0');
-  const minutes = slot.getMinutes().toString().padStart(2, '0');
-  return `${hours}:${minutes}`;
-};
 
 export default function SearchScreen() {
   const navigation = useNavigation<RootStackNavigationProp<'Search'>>();
@@ -106,7 +99,7 @@ export default function SearchScreen() {
       menuItem: item,
       quantity: nextQuantity,
       tempPreference: existingItem?.tempPreference || item.tempOptions[0] || 'normal',
-      scheduledTime: existingItem?.scheduledTime || getDefaultScheduledTime(),
+      scheduledTime: existingItem?.scheduledTime || getDefaultPickupTime(),
     });
   };
 
