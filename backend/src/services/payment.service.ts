@@ -1,7 +1,59 @@
 import { getPaymentMode } from '../utils/paymentMode.js';
 
+type PaymentServiceError = Error & {
+  code: string;
+  cause?: unknown;
+};
+
 function toId(value: unknown) {
   return String(value);
+}
+
+function createPaymentServiceError(message: string, code: string, cause?: unknown) {
+  const error = new Error(message) as PaymentServiceError;
+  error.code = code;
+
+  if (cause) {
+    error.cause = cause;
+  }
+
+  return error;
+}
+
+export async function createRazorpayOrder(amountPaise: number, receipt: string) {
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+  if (!keyId || !keySecret) {
+    throw createPaymentServiceError('Missing Razorpay configuration', 'RAZORPAY_CONFIG_MISSING');
+  }
+
+  try {
+    const { default: Razorpay } = await import('razorpay');
+    const razorpay = new Razorpay({
+      key_id: keyId,
+      key_secret: keySecret,
+    });
+
+    const razorpayOrder = await razorpay.orders.create({
+      amount: amountPaise,
+      currency: 'INR',
+      receipt,
+    });
+
+    return {
+      razorpay_order_id: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      key_id: keyId,
+    };
+  } catch (error) {
+    throw createPaymentServiceError(
+      'Failed to create Razorpay order',
+      'RAZORPAY_ORDER_CREATE_FAILED',
+      error,
+    );
+  }
 }
 
 export async function initiatePayment(order: { _id: unknown; totalAmount: number }) {
@@ -41,32 +93,8 @@ export async function initiatePayment(order: { _id: unknown; totalAmount: number
     };
   }
 
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
-  if (!keyId || !keySecret) {
-    throw new Error('Missing Razorpay configuration');
-  }
-
-  const { default: Razorpay } = await import('razorpay');
-  const razorpay = new Razorpay({
-    key_id: keyId,
-    key_secret: keySecret,
-  });
-
-  const razorpayOrder = await razorpay.orders.create({
-    amount: Math.round(order.totalAmount * 100),
-    currency: 'INR',
-    notes: {
-      orderId,
-    },
-  });
-
-  return {
-    mode,
-    razorpayOrderId: razorpayOrder.id,
-    amount: order.totalAmount,
-    key: keyId,
-    orderId,
-  };
+  throw createPaymentServiceError(
+    'Razorpay orders must be created through createRazorpayOrder',
+    'RAZORPAY_FLOW_NOT_SUPPORTED',
+  );
 }

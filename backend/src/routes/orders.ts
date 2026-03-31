@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { io } from '../server.js';
 import { MenuItem, Order, User } from '../models/index.js';
-import { initiatePayment } from '../services/payment.service.js';
+import { createRazorpayOrder, initiatePayment } from '../services/payment.service.js';
 import { finalizePaidOrder } from '../services/order-payment.service.js';
 import { serializeOrder } from '../utils/order.utils.js';
 import { getPaymentMode, PaymentMode } from '../utils/paymentMode.js';
@@ -152,6 +152,15 @@ function applyPaymentMethod(order: any, mode: PaymentMode) {
   order.paymentMethod = mode;
 }
 
+function isRazorpayOrderCreationError(error: unknown) {
+  if (!error || typeof error !== 'object' || !('code' in error)) {
+    return false;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return code === 'RAZORPAY_CONFIG_MISSING' || code === 'RAZORPAY_ORDER_CREATE_FAILED';
+}
+
 router.get('/payment-config', requireAuth, (_req: AuthenticatedRequest, res: Response) => {
   res.json(getPaymentConfigResponse());
 });
@@ -256,12 +265,24 @@ router.post(
         paymentStatus: 'pending',
       });
 
+      if (getPaymentMode() === 'razorpay') {
+        const razorpay = await createRazorpayOrder(
+          Math.round(order.totalAmount * 100),
+          String(order._id),
+        );
+
+        applyPaymentMethod(order, 'razorpay');
+        order.razorpayOrderId = razorpay.razorpay_order_id;
+        await order.save();
+
+        return res.status(201).json({
+          order: serializeOrder(order),
+          razorpay,
+        });
+      }
+
       const payment = await initiatePayment(order);
       applyPaymentMethod(order, payment.mode);
-
-      if (payment.mode === 'razorpay') {
-        order.razorpayOrderId = payment.razorpayOrderId;
-      }
 
       await order.save();
 
@@ -269,6 +290,11 @@ router.post(
     } catch (error) {
       if (order?._id) {
         await Order.findByIdAndDelete(order._id).catch(() => undefined);
+      }
+
+      if (isRazorpayOrderCreationError(error)) {
+        console.error('Failed to create Razorpay order', error);
+        return res.status(502).json({ error: 'Payment gateway unavailable' });
       }
 
       res.status(500).json({ error: `Failed to create order: ${getReadableError(error)}` });

@@ -1,7 +1,7 @@
-import axios from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import { NativeModules, Platform } from 'react-native';
 import { useAuthStore } from '../stores/authStore';
-import type { PaymentInitResponse, PaymentMode, User } from '../types';
+import type { Order, PaymentInitResponse, PaymentMode, User } from '../types';
 import { normalizeMenuItems } from '../utils/menu';
 
 const normalizeOrigin = (value?: string | null): string | null => {
@@ -41,6 +41,7 @@ const getDefaultApiOrigin = (): string | null => {
 };
 
 const configuredOrigin = normalizeOrigin(process.env.EXPO_PUBLIC_API_URL);
+const configuredPaymentOrigin = normalizeOrigin(process.env.EXPO_PUBLIC_PAYMENT_API_URL);
 const inferredOrigin = getDefaultApiOrigin();
 
 export const API_CONFIG_ERROR =
@@ -49,8 +50,10 @@ export const API_CONFIG_ERROR =
     : 'This build is missing EXPO_PUBLIC_API_URL. Point it to your public backend URL and rebuild the app.';
 
 const API_ORIGIN = configuredOrigin || inferredOrigin || 'https://invalid.localhost';
+const PAYMENT_API_ORIGIN = configuredPaymentOrigin || API_ORIGIN;
 
 export const API_BASE = `${API_ORIGIN}/api`;
+export const PAYMENT_API_BASE = PAYMENT_API_ORIGIN;
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -82,6 +85,18 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+type RazorpayCreateOrderResponse = {
+  order: Order;
+  razorpay: {
+    key_id: string;
+    razorpay_order_id: string;
+    amount: number;
+    currency: string;
+  };
+};
+
+type CreateOrderResponse = PaymentInitResponse | RazorpayCreateOrderResponse;
 
 type AuthResponse = {
   user: User;
@@ -127,8 +142,24 @@ export const menuApi = {
 };
 
 export const orderApi = {
-  createOrder: (data: { items: any[]; scheduledTime: string }) =>
-    api.post<PaymentInitResponse>('/orders/create', data),
+  createOrder: async (data: { items: any[]; scheduledTime: string }): Promise<AxiosResponse<PaymentInitResponse>> => {
+    const response = await api.post<CreateOrderResponse>('/orders/create', data);
+
+    if ('razorpay' in response.data && 'order' in response.data) {
+      return {
+        ...response,
+        data: {
+          mode: 'razorpay',
+          orderId: response.data.order.id,
+          amount: response.data.razorpay.amount / 100,
+          order: response.data.order,
+          razorpay: response.data.razorpay,
+        },
+      } as AxiosResponse<PaymentInitResponse>;
+    }
+
+    return response as AxiosResponse<PaymentInitResponse>;
+  },
   getMyOrders: () => api.get('/orders/my'),
   getOrder: (id: string) => api.get(`/orders/${id}`),
   getPaymentConfig: () =>
@@ -144,4 +175,34 @@ export const paymentApi = {
     api.post('/orders/confirm-mock', data),
   confirmUpiPayment: (data: { orderId: string; upiTransactionId: string }) =>
     api.post('/orders/confirm-upi', data),
+  confirmRazorpayPayment: async (
+    orderId: string,
+    data: {
+      razorpay_payment_id: string;
+      razorpay_order_id: string;
+      razorpay_signature: string;
+    },
+  ) => {
+    const response = await fetch(`${PAYMENT_API_BASE}/api/orders/${orderId}/confirm-razorpay`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+
+    const parsed = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const error = new Error(parsed?.error || 'Payment verification failed') as Error & {
+        response?: { data?: unknown };
+      };
+      error.response = { data: parsed };
+      throw error;
+    }
+
+    return {
+      data: parsed as { orderId: string; qrToken?: string },
+    };
+  },
 };

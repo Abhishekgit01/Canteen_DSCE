@@ -5,7 +5,6 @@ import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
 import dotenv from 'dotenv';
-import webhookRoutes from './routes/webhook.js';
 import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
@@ -63,9 +62,6 @@ app.use(cors({
 //   legacyHeaders: false,
 // });
 // app.use('/api/auth/login', loginLimiter);
-
-// WEBHOOK ROUTE - MUST be before express.json()
-app.use('/api/orders/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
 
 // 6. JSON body parser with size limit
 app.use(express.json({ limit: '10kb' }));

@@ -64,6 +64,13 @@ type PaymentInitBase = {
   amount: number;
 };
 
+export type RazorpayOrderDetails = {
+  key_id: string;
+  razorpay_order_id: string;
+  amount: number;
+  currency: string;
+};
+
 export type MockPaymentInitResponse = PaymentInitBase & {
   mode: 'mock';
   transactionId: string;
@@ -78,8 +85,8 @@ export type UpiLinkPaymentInitResponse = PaymentInitBase & {
 
 export type RazorpayPaymentInitResponse = PaymentInitBase & {
   mode: 'razorpay';
-  razorpayOrderId: string;
-  key: string;
+  order: Order;
+  razorpay: RazorpayOrderDetails;
 };
 
 export type PaymentInitResponse =

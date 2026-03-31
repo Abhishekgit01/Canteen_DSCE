@@ -15,6 +15,7 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as IntentLauncher from 'expo-intent-launcher';
+import RazorpayCheckout from 'react-native-razorpay';
 import { orderApi, paymentApi } from '../api';
 import { connectSocket } from '../api/socket';
 import { useAuthStore } from '../stores/authStore';
@@ -40,6 +41,20 @@ function formatAmount(amount: number) {
 function getErrorMessage(error: any) {
   return error?.response?.data?.error || error?.description || 'Payment failed. Please try again.';
 }
+
+function getRazorpayErrorMessage(error: any) {
+  return (
+    error?.response?.data?.error ||
+    error?.description ||
+    'Checkout was closed before confirmation. If money was debited, wait for automatic confirmation or retry.'
+  );
+}
+
+type RazorpaySuccessResponse = {
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
+};
 
 const androidUpiPackages = {
   gpay: 'com.google.android.apps.nbu.paisa.user',
@@ -67,6 +82,7 @@ export default function PaymentScreen() {
 
   const shortOrderId = orderId.slice(-6).toUpperCase();
   const upiPayment = mode === 'upi_link' ? (payment as UpiLinkPaymentInitResponse) : null;
+  const razorpayPayment = mode === 'razorpay' ? (payment as RazorpayPaymentInitResponse) : null;
   const merchantName = upiPayment?.canteenName || 'DSCE Canteen';
   const merchantUpiId = upiPayment?.canteenUpiId || 'canteen@upi';
   const selectedUpiAppLabel =
@@ -203,65 +219,70 @@ export default function PaymentScreen() {
     }
   };
 
+  const handleRazorpayCheckout = async () => {
+    if (!razorpayPayment || hasNavigatedRef.current) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatusMessage('Opening Razorpay...');
+    setErrorMessage('');
+
+    try {
+      const data = (await RazorpayCheckout.open({
+        key: razorpayPayment.razorpay.key_id,
+        amount: razorpayPayment.razorpay.amount,
+        currency: razorpayPayment.razorpay.currency,
+        order_id: razorpayPayment.razorpay.razorpay_order_id,
+        name: 'DSCE Canteen',
+        description: 'Food Order',
+        prefill: {
+          contact: '',
+          email: user?.email || '',
+        },
+        theme: {
+          color: '#f97316',
+        },
+      })) as RazorpaySuccessResponse;
+
+      if (hasNavigatedRef.current) {
+        return;
+      }
+
+      setStatusMessage('Verifying payment...');
+
+      const response = await paymentApi.confirmRazorpayPayment(orderId, {
+        razorpay_payment_id: data.razorpay_payment_id,
+        razorpay_order_id: data.razorpay_order_id,
+        razorpay_signature: data.razorpay_signature,
+      });
+
+      const qrToken = response.data?.qrToken;
+      if (!qrToken) {
+        await fetchQrAndNavigate();
+        return;
+      }
+
+      await navigateToOrderQr(qrToken);
+    } catch (error) {
+      if (hasNavigatedRef.current) {
+        return;
+      }
+
+      setIsSubmitting(false);
+      setStatusMessage(null);
+      setErrorMessage(getRazorpayErrorMessage(error));
+    }
+  };
+
   useEffect(() => {
     if (mode !== 'razorpay' || razorpayStartedRef.current) {
       return;
     }
 
-    const razorpayPayment = payment as RazorpayPaymentInitResponse;
     razorpayStartedRef.current = true;
-
-    let cancelled = false;
-
-    const startRazorpay = async () => {
-      setIsSubmitting(true);
-      setStatusMessage('Opening Razorpay...');
-      setErrorMessage('');
-
-      try {
-        const RazorpayCheckout = require('react-native-razorpay').default;
-
-        await RazorpayCheckout.open({
-          key: razorpayPayment.key,
-          amount: String(Math.round(amount * 100)),
-          currency: 'INR',
-          name: 'DSCE Canteen',
-          description: `Order #${shortOrderId}`,
-          order_id: razorpayPayment.razorpayOrderId,
-          prefill: {
-            name: user?.name,
-            email: user?.email,
-          },
-          notes: {
-            orderId,
-          },
-          theme: {
-            color: '#f97316',
-          },
-        });
-
-        if (cancelled || hasNavigatedRef.current) {
-          return;
-        }
-
-        setStatusMessage('Payment received. Waiting for confirmation...');
-      } catch (error) {
-        if (cancelled || hasNavigatedRef.current) {
-          return;
-        }
-
-        setIsSubmitting(false);
-        setStatusMessage(null);
-        setErrorMessage(getErrorMessage(error));
-      }
-    };
-
-    void startRazorpay();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [amount, mode, orderId, payment, shortOrderId, user?.email, user?.name]);
+    void handleRazorpayCheckout();
+  }, [mode, razorpayPayment, orderId, user?.email]);
 
   const renderStatus = () => {
     if (!statusMessage && !isSubmitting) {
@@ -490,11 +511,23 @@ export default function PaymentScreen() {
         ) : null}
 
         {mode === 'razorpay' ? (
-          <View style={styles.razorpayCard}>
-            <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
-            <Text style={styles.mutedText}>Launching Razorpay checkout</Text>
-            <Text style={styles.mutedText}>Stay on this screen until payment is confirmed.</Text>
-          </View>
+          <>
+            <View style={styles.razorpayCard}>
+              <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
+              <Text style={styles.mutedText}>Launching Razorpay checkout</Text>
+              <Text style={styles.mutedText}>Stay on this screen until payment is confirmed.</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+              onPress={() => void handleRazorpayCheckout()}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.primaryButtonText}>
+                {isSubmitting ? 'Waiting for confirmation...' : 'Open Razorpay Again'}
+              </Text>
+            </TouchableOpacity>
+          </>
         ) : null}
 
         {renderStatus()}

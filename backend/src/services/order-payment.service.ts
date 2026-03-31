@@ -1,6 +1,7 @@
+import { Order } from '../models/index.js';
 import { io } from '../server.js';
 import { buildQrToken } from '../utils/qrToken.js';
-import { serializeOrder } from '../utils/order.utils.js';
+import { getOrderQrToken, serializeOrder } from '../utils/order.utils.js';
 
 type FinalizePaidOrderOptions = {
   paymentMethod: 'mock' | 'upi_link' | 'razorpay';
@@ -47,4 +48,55 @@ export async function finalizePaidOrder(order: any, options: FinalizePaidOrderOp
     qrToken,
     serializedOrder,
   };
+}
+
+type FinalizeOrderOptions = {
+  razorpayPaymentId?: string;
+  webhookVerified?: boolean;
+};
+
+function isAlreadyFinalized(status: unknown) {
+  return ['paid', 'preparing', 'ready', 'fulfilled'].includes(String(status));
+}
+
+export async function finalizeOrder(
+  razorpayOrderId: string,
+  options: FinalizeOrderOptions = {},
+) {
+  const order = await Order.findOne({ razorpayOrderId }).select('+qrTokenHash');
+  if (!order) {
+    return null;
+  }
+
+  if (isAlreadyFinalized(order.status)) {
+    let shouldSave = false;
+
+    if (options.razorpayPaymentId && !order.razorpayPaymentId) {
+      order.razorpayPaymentId = options.razorpayPaymentId;
+      shouldSave = true;
+    }
+
+    if (options.webhookVerified && !order.webhookVerified) {
+      order.webhookVerified = true;
+      shouldSave = true;
+    }
+
+    if (shouldSave) {
+      await order.save();
+    }
+
+    const qrToken = getOrderQrToken(order);
+
+    return {
+      order,
+      qrToken,
+      serializedOrder: serializeOrder(order, { includeQrToken: true }),
+    };
+  }
+
+  return finalizePaidOrder(order, {
+    paymentMethod: 'razorpay',
+    razorpayPaymentId: options.razorpayPaymentId,
+    webhookVerified: options.webhookVerified,
+  });
 }

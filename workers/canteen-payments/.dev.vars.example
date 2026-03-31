@@ -1,0 +1,10 @@
+RAZORPAY_KEY_SECRET=XXXX
+RAZORPAY_WEBHOOK_SECRET=XXXX
+ATLAS_DATA_API_URL=https://data.mongodb-api.com/app/data-XXXX/endpoint/data/v1
+ATLAS_DATA_API_KEY=XXXX
+ATLAS_DATA_SOURCE=Cluster0
+ATLAS_DB=your_db_name
+ATLAS_COLLECTION_ORDERS=orders
+INTERNAL_SECRET=some_long_random_string
+RENDER_INTERNAL_URL=https://your-render-app.onrender.com
+QR_SECRET=your-qr-secret-key-change-in-production

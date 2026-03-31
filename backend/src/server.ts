@@ -1,4 +1,5 @@
 import { createServer } from 'http';
+import express from 'express';
 import { Server as SocketIOServer } from 'socket.io';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
@@ -92,6 +93,21 @@ io.on('connection', (socket) => {
 
 // Export io for use in routes
 export { io };
+
+app.post('/internal/emit', express.json(), (req, res) => {
+  const { secret, event, payload } = req.body ?? {};
+
+  if (secret !== process.env.INTERNAL_SECRET) {
+    return res.sendStatus(403);
+  }
+
+  if (typeof event !== 'string' || !event.trim()) {
+    return res.sendStatus(400);
+  }
+
+  io.emit(event, payload);
+  return res.sendStatus(200);
+});
 
 // Root route for API status and Razorpay verification
 app.get('/', (_req, res) => {
