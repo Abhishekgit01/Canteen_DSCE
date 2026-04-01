@@ -24,6 +24,7 @@ import {
   getDefaultPickupTime,
   getLunchRushWindowLabel,
   getPickupTimeSlots,
+  PICKUP_TIME_CONFIG,
 } from '../utils/pickupTime';
 
 function getErrorMessage(error: any) {
@@ -126,6 +127,16 @@ export default function CartScreen() {
   const [h, m] = selectedPickupTime.split(':').map(Number);
   pickerDate.setHours(h || 12, m || 0, 0, 0);
 
+  const minDate = new Date();
+  minDate.setHours(PICKUP_TIME_CONFIG.serviceStartHour, 0, 0, 0);
+  const rawMin = new Date(Date.now() + PICKUP_TIME_CONFIG.leadMinutes * 60000);
+  const actualMinDate = rawMin > minDate ? rawMin : minDate;
+
+  const maxDate = new Date();
+  maxDate.setHours(PICKUP_TIME_CONFIG.serviceEndHour, 0, 0, 0);
+  
+  const finalMinDate = actualMinDate > maxDate ? maxDate : actualMinDate;
+
   if (items.length === 0) {
     return (
       <View style={styles.screen}>
@@ -205,6 +216,8 @@ export default function CartScreen() {
               mode="time"
               is24Hour={false}
               display="default"
+              minimumDate={finalMinDate}
+              maximumDate={maxDate}
               onChange={handlePickupTimeChange}
             />
           )}

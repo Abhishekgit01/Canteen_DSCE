@@ -85,7 +85,7 @@ function MainTabs() {
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Cart" component={CartScreen} />
       <Tab.Screen name="Orders" component={OrdersScreen} />
-      {user?.role === 'staff' && <Tab.Screen name="Scanner" component={ScannerScreen} />}
+      {['staff', 'manager', 'admin'].includes(user?.role || '') && <Tab.Screen name="Scanner" component={ScannerScreen} />}
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
