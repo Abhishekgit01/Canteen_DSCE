@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { menuApi } from '../api';
 import AppIcon from '../components/AppIcon';
 import FoodCard from '../components/FoodCard';
+import SkeletonCard from '../components/SkeletonCard';
 import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import { MainTabNavigationProp, MenuItem } from '../types';
@@ -145,7 +146,7 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.heroTimer}>
-            <Text style={styles.heroTimerValue}>{rushInfo.minutes}</Text>
+            <Text style={styles.heroTimerValue}>{rushInfo.formattedTime}</Text>
             <Text style={styles.heroTimerLabel}>{rushInfo.label}</Text>
           </View>
         </View>
@@ -208,10 +209,18 @@ export default function HomeScreen() {
       <StatusBar style="light" />
 
       {loading ? (
-        <View style={styles.centerState}>
-          <ActivityIndicator size="large" color={palette.accent} />
-          <Text style={styles.stateText}>Loading today&apos;s menu...</Text>
-        </View>
+        <FlatList
+          data={[1, 2, 3, 4, 5]}
+          keyExtractor={(i) => i.toString()}
+          contentContainerStyle={[
+            styles.menuList,
+            { paddingBottom: tabBarHeight + 18 },
+          ]}
+          ListHeaderComponent={renderHeader}
+          renderItem={() => <SkeletonCard />}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          scrollEnabled={false}
+        />
       ) : (
         <FlatList
           data={filteredItems}
@@ -373,9 +382,9 @@ const styles = StyleSheet.create({
   },
   heroTimerValue: {
     color: palette.surface,
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '900',
-    lineHeight: 30,
+    lineHeight: 28,
   },
   heroTimerLabel: {
     color: 'rgba(255,255,255,0.8)',

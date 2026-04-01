@@ -87,27 +87,40 @@ export function getLunchRushInfo(now = new Date()) {
   const rushStart = setTimeForToday(now, PICKUP_TIME_CONFIG.lunchRushStartHour);
   const rushEnd = setTimeForToday(now, PICKUP_TIME_CONFIG.lunchRushEndHour);
 
+  const formatDuration = (minutes: number) => {
+    if (minutes < 60) return `${minutes}m`;
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  };
+
   if (now < rushStart) {
+    const mins = Math.max(1, Math.ceil((rushStart.getTime() - now.getTime()) / 60000));
     return {
-      minutes: Math.max(1, Math.ceil((rushStart.getTime() - now.getTime()) / 60000)),
-      label: 'MINS TO START',
+      minutes: mins,
+      formattedTime: formatDuration(mins),
+      label: 'TO START',
       subtitle: `Rush window ${getLunchRushWindowLabel()}`,
     };
   }
 
   if (now < rushEnd) {
+    const mins = Math.max(1, Math.ceil((rushEnd.getTime() - now.getTime()) / 60000));
     return {
-      minutes: Math.max(1, Math.ceil((rushEnd.getTime() - now.getTime()) / 60000)),
-      label: 'MINS LEFT',
+      minutes: mins,
+      formattedTime: formatDuration(mins),
+      label: 'LEFT',
       subtitle: `Rush window ${getLunchRushWindowLabel()}`,
     };
   }
 
   const tomorrowStart = setTimeForToday(new Date(now.getTime() + 24 * 60 * 60 * 1000), PICKUP_TIME_CONFIG.lunchRushStartHour);
+  const mins = Math.max(1, Math.ceil((tomorrowStart.getTime() - now.getTime()) / 60000));
 
   return {
-    minutes: Math.max(1, Math.ceil((tomorrowStart.getTime() - now.getTime()) / 60000)),
-    label: 'MINS TO START',
+    minutes: mins,
+    formattedTime: formatDuration(mins),
+    label: 'TO START',
     subtitle: `Next rush ${getLunchRushWindowLabel()}`,
   };
 }

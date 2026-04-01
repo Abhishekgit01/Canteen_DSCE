@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -37,6 +38,7 @@ export default function CartScreen() {
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedPickupTime, setSelectedPickupTime] = useState(items[0]?.scheduledTime || getDefaultPickupTime());
+  const [showPicker, setShowPicker] = useState(false);
   const pickupSlots = getPickupTimeSlots();
 
   useEffect(() => {
@@ -109,10 +111,20 @@ export default function CartScreen() {
     });
   };
 
-  const handlePickupTimeChange = async (time: string) => {
-    setSelectedPickupTime(time);
-    await setScheduledTime(time);
+  const handlePickupTimeChange = async (event: any, selectedDate?: Date) => {
+    setShowPicker(false);
+    if (selectedDate) {
+      const hours = selectedDate.getHours().toString().padStart(2, '0');
+      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
+      const timeStr = `${hours}:${minutes}`;
+      setSelectedPickupTime(timeStr);
+      await setScheduledTime(timeStr);
+    }
   };
+
+  const pickerDate = new Date();
+  const [h, m] = selectedPickupTime.split(':').map(Number);
+  pickerDate.setHours(h || 12, m || 0, 0, 0);
 
   if (items.length === 0) {
     return (
@@ -174,24 +186,28 @@ export default function CartScreen() {
 
           <Text style={styles.rushHint}>Lunch rush window: {getLunchRushWindowLabel()}</Text>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slotList}>
-            {pickupSlots.map((time) => {
-              const active = selectedPickupTime === time;
+          <TouchableOpacity
+            activeOpacity={0.92}
+            style={styles.timeChipActive}
+            onPress={() => setShowPicker(true)}
+          >
+            <View style={styles.pickerButtonContent}>
+              <Text style={styles.timeChipTextActive}>
+                Tap to select time ({formatPickupTime(selectedPickupTime)})
+              </Text>
+              <AppIcon name="clock" size={16} color={palette.surface} />
+            </View>
+          </TouchableOpacity>
 
-              return (
-                <TouchableOpacity
-                  key={time}
-                  activeOpacity={0.92}
-                  style={[styles.timeChip, active && styles.timeChipActive]}
-                  onPress={() => void handlePickupTimeChange(time)}
-                >
-                  <Text style={[styles.timeChipText, active && styles.timeChipTextActive]}>
-                    {formatPickupTime(time)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          {showPicker && (
+            <DateTimePicker
+              value={pickerDate}
+              mode="time"
+              is24Hour={false}
+              display="default"
+              onChange={handlePickupTimeChange}
+            />
+          )}
         </View>
 
         <View style={styles.card}>
@@ -433,6 +449,14 @@ const styles = StyleSheet.create({
   },
   timeChipActive: {
     backgroundColor: palette.accent,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  pickerButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   timeChipText: {
     color: palette.ink,

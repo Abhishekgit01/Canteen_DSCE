@@ -23,7 +23,7 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
   const [error, setError] = useState('');
   
   // Login fields
-  const [loginUsn, setLoginUsn] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   
   // Signup fields
@@ -78,16 +78,16 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
   }, [normalizedSignupUsn]);
 
   const handleLogin = async () => {
-    const normalizedLoginUsn = loginUsn.trim().toUpperCase().replace(/\s+/g, '');
+    const normalizedEmail = loginEmail.trim().toLowerCase();
 
-    if (!normalizedLoginUsn || !loginPassword) {
+    if (!normalizedEmail || !loginPassword) {
       setError('Please fill all fields');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      const response = await authApi.login({ usn: normalizedLoginUsn, password: loginPassword });
+      const response = await authApi.login({ email: normalizedEmail, password: loginPassword });
       const { user, token } = response.data;
       await setAuth(user, token);
       navigation.replace('Main');
@@ -111,7 +111,7 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
     }
     if (!studentName) {
       if (!manualName.trim()) {
-        setError(usnLookupError || 'Enter your name to continue');
+        setError(usnLookupError || 'USN not found in roster');
         return;
       }
     }
@@ -173,11 +173,12 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
           <View style={styles.form}>
             <TextInput
               style={styles.input}
-              placeholder="USN"
+              placeholder="Email"
               placeholderTextColor="#8892a4"
-              value={loginUsn}
-              onChangeText={(value) => setLoginUsn(value.toUpperCase())}
-              autoCapitalize="characters"
+              value={loginEmail}
+              onChangeText={setLoginEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
             />
             <TextInput
               style={styles.input}

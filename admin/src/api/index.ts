@@ -37,8 +37,8 @@ api.interceptors.response.use(
 export default api;
 
 export const authApi = {
-  login: (usn: string, password: string) =>
-    api.post('/auth/login', { usn, password }),
+  login: (email: string, password: string) =>
+    api.post('/auth/login', { email, password }),
 };
 
 export const menuApi = {
@@ -49,7 +49,13 @@ export const menuApi = {
 };
 
 export const ordersApi = {
-  getOrders: () => api.get('/admin/orders'),
+  getOrders: () => api.get('/orders'),
+  getOrderById: (orderId: string) => api.get(`/orders/${orderId}`),
+  createOrder: (items: any[]) => api.post('/orders', { items }),
+  updateOrderStatus: (orderId: string, status: string) =>
+    api.patch(`/orders/${orderId}/status`, { status }),
+  fulfillOrder: (orderId: string, qrToken: string) =>
+    api.post(`/orders/${orderId}/fulfill`, { qrToken }),
 };
 
 export const statsApi = {

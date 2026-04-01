@@ -1,0 +1,12 @@
+name = "canteen-payments-worker"
+main = "src/index.ts"
+compatibility_date = "2024-04-01"
+
+[vars]
+# MONGODB_DATA_API_URL = "..."
+# MONGODB_DATA_API_KEY = "..."
+# RAZORPAY_KEY_SECRET = "..."
+# RAZORPAY_WEBHOOK_SECRET = "..."
+# INTERNAL_SECRET = "..."
+# BACKEND_URL = "..."
+# JWT_SECRET = "..."

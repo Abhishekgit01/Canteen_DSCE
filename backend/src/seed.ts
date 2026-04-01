@@ -8,185 +8,166 @@ dotenv.config();
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/canteen';
 
 const menuItems = [
+  // MEALS
   {
     name: 'Masala Dosa',
-    description: 'Crispy rice crepe filled with spiced potato filling',
-    imageUrl: 'https://images.unsplash.com/photo-1589301760015-d7a276c9743a?w=400',
-    price: 60,
+    description: 'Crispy rice crepe filled with spiced potato filling, served with coconut chutney and sambar',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Masala+Dosa',
+    price: 55,
     calories: 350,
     category: 'meals',
     tempOptions: ['normal', 'hot'],
     isAvailable: true,
+    preparationMinutes: 12,
   },
   {
-    name: 'Idli Sambar',
-    description: 'Steamed rice cakes with lentil soup',
-    imageUrl: 'https://images.unsplash.com/photo-1588137372308-15f75323ca8d?w=400',
+    name: 'Idli Sambar (3pc)',
+    description: 'Steamed rice cakes served with lentil soup and coconut chutney',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Idli+Sambar',
     price: 40,
-    calories: 200,
+    calories: 280,
     category: 'meals',
     tempOptions: ['normal', 'hot'],
     isAvailable: true,
+    preparationMinutes: 8,
   },
   {
-    name: 'Vada Pav',
-    description: 'Spiced potato fritter in a bun',
-    imageUrl: 'https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=400',
-    price: 30,
-    calories: 280,
-    category: 'snacks',
-    tempOptions: ['normal', 'hot'],
-    isAvailable: true,
-  },
-  {
-    name: 'Samosa',
-    description: 'Crispy pastry filled with spiced potatoes',
-    imageUrl: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400',
-    price: 25,
-    calories: 220,
-    category: 'snacks',
-    tempOptions: ['normal', 'hot'],
-    isAvailable: true,
-  },
-  {
-    name: 'Cold Coffee',
-    description: 'Chilled coffee with ice cream',
-    imageUrl: 'https://images.unsplash.com/photo-1517701604599-bb29b5dd7359?w=400',
-    price: 50,
-    calories: 180,
-    category: 'beverages',
-    tempOptions: ['cold'],
-    isAvailable: true,
-  },
-  {
-    name: 'Masala Chai',
-    description: 'Spiced tea with milk',
-    imageUrl: 'https://images.unsplash.com/photo-1561336313-0bd5e0b27ec8?w=400',
-    price: 20,
-    calories: 80,
-    category: 'beverages',
-    tempOptions: ['cold', 'hot'],
-    isAvailable: true,
-  },
-  {
-    name: 'Gulab Jamun',
-    description: 'Sweet milk solids in sugar syrup',
-    imageUrl: 'https://images.unsplash.com/photo-1601308578847-256025cd894e?w=400',
-    price: 35,
-    calories: 250,
-    category: 'desserts',
-    tempOptions: ['normal', 'hot'],
-    isAvailable: true,
-  },
-  {
-    name: 'Rasmalai',
-    description: 'Creamy cottage cheese patties in sweetened milk',
-    imageUrl: 'https://images.unsplash.com/photo-1623653387945-2fd25214e8df?w=400',
-    price: 45,
-    calories: 220,
-    category: 'desserts',
-    tempOptions: ['cold'],
-    isAvailable: true,
-  },
-  {
-    name: 'Biryani',
-    description: 'Fragrant rice with spiced vegetables',
-    imageUrl: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=400',
-    price: 120,
+    name: 'Veg Fried Rice',
+    description: 'Wok-tossed rice with fresh vegetables and Indo-Chinese spices',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Veg+Fried+Rice',
+    price: 70,
     calories: 450,
     category: 'meals',
     tempOptions: ['normal', 'hot'],
     isAvailable: true,
+    preparationMinutes: 15,
   },
   {
-    name: 'Pav Bhaji',
-    description: 'Spiced vegetable mash with buttered buns',
-    imageUrl: 'https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=400',
-    price: 80,
+    name: 'Chicken Biryani',
+    description: 'Fragrant basmati rice layered with tender spiced chicken, served with raita',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Chicken+Biryani',
+    price: 110,
+    calories: 620,
+    category: 'meals',
+    tempOptions: ['normal', 'hot'],
+    isAvailable: true,
+    preparationMinutes: 20,
+  },
+  {
+    name: 'Chapati with Curry (3pc)',
+    description: 'Soft whole wheat flatbreads served with seasonal vegetable curry',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Chapati+with+Curry',
+    price: 50,
     calories: 380,
     category: 'meals',
     tempOptions: ['normal', 'hot'],
     isAvailable: true,
+    preparationMinutes: 10,
   },
+
+  // SNACKS
   {
-    name: 'Fresh Juice',
-    description: 'Assorted fruit juices',
-    imageUrl: 'https://images.unsplash.com/photo-1600271886742-f049cd451bba?w=400',
-    price: 40,
-    calories: 120,
-    category: 'beverages',
-    tempOptions: ['cold'],
-    isAvailable: true,
-  },
-  {
-    name: 'Sandwich',
-    description: 'Grilled vegetable sandwich',
-    imageUrl: 'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=400',
-    price: 55,
-    calories: 300,
-    category: 'snacks',
-    tempOptions: ['normal'],
-    isAvailable: true,
-  },
-  {
-    name: 'Paneer Tikka',
-    description: 'Grilled cottage cheese with spices',
-    imageUrl: 'https://images.unsplash.com/photo-1567188040759-fb8a883dc5d8?w=400',
-    price: 80,
-    calories: 300,
-    category: 'meals',
-    tempOptions: ['normal', 'hot'],
-    isAvailable: true,
-  },
-  {
-    name: 'Mango Lassi',
-    description: 'Sweet yogurt drink with mango',
-    imageUrl: 'https://images.unsplash.com/photo-1577803645773-f96470509688?w=400',
-    price: 45,
-    calories: 150,
-    category: 'beverages',
-    tempOptions: ['cold'],
-    isAvailable: true,
-  },
-  {
-    name: 'Pani Puri',
-    description: 'Crispy shells filled with spiced water',
-    imageUrl: 'https://images.unsplash.com/photo-1605883705077-8d3d3cebe78f?w=400',
-    price: 30,
-    calories: 120,
-    category: 'snacks',
-    tempOptions: ['normal'],
-    isAvailable: true,
-  },
-  {
-    name: 'Test Peri Peri Fries',
-    description: 'Crispy fries tossed in peri peri seasoning with a side of garlic mayo',
-    imageUrl: 'https://images.unsplash.com/photo-1576107232684-1279f390859f?w=400',
-    price: 85,
-    calories: 320,
+    name: 'Samosa (2pc)',
+    description: 'Crispy golden pastry stuffed with spiced potato and peas',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Samosa',
+    price: 20,
+    calories: 180,
     category: 'snacks',
     tempOptions: ['normal', 'hot'],
     isAvailable: true,
+    preparationMinutes: 5,
   },
   {
-    name: 'Test Iced Mocha',
-    description: 'Cold coffee blended with chocolate and topped with a light foam finish',
-    imageUrl: 'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=400',
-    price: 70,
-    calories: 210,
-    category: 'beverages',
-    tempOptions: ['cold'],
+    name: 'Veg Puff',
+    description: 'Flaky puff pastry with spiced vegetable filling',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Veg+Puff',
+    price: 18,
+    calories: 220,
+    category: 'snacks',
+    tempOptions: ['normal', 'hot'],
     isAvailable: true,
+    preparationMinutes: 5,
   },
   {
-    name: 'Test Corn Cheese Puff',
-    description: 'Buttery puff pastry packed with sweet corn, cheese, and cracked pepper',
-    imageUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400',
+    name: 'French Fries',
+    description: 'Crispy golden fries seasoned with salt and spices',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=French+Fries',
+    price: 60,
+    calories: 310,
+    category: 'snacks',
+    tempOptions: ['normal', 'hot'],
+    isAvailable: true,
+    preparationMinutes: 8,
+  },
+  {
+    name: 'Bread Omelette',
+    description: 'Fluffy egg omelette sandwiched in buttered toast',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Bread+Omelette',
     price: 35,
-    calories: 260,
+    calories: 290,
     category: 'snacks',
     tempOptions: ['normal', 'hot'],
     isAvailable: true,
+    preparationMinutes: 7,
+  },
+
+  // BEVERAGES
+  {
+    name: 'Filter Coffee',
+    description: 'Traditional South Indian filter coffee brewed fresh',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Filter+Coffee',
+    price: 20,
+    calories: 80,
+    category: 'beverages',
+    tempOptions: ['hot'],
+    isAvailable: true,
+    preparationMinutes: 3,
+  },
+  {
+    name: 'Cold Coffee',
+    description: 'Chilled coffee blended with ice cream and milk',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Cold+Coffee',
+    price: 45,
+    calories: 180,
+    category: 'beverages',
+    tempOptions: ['cold'],
+    isAvailable: true,
+    preparationMinutes: 4,
+  },
+  {
+    name: 'Fresh Lime Soda',
+    description: 'Refreshing lime juice mixed with chilled soda water',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Fresh+Lime+Soda',
+    price: 30,
+    calories: 60,
+    category: 'beverages',
+    tempOptions: ['cold'],
+    isAvailable: true,
+    preparationMinutes: 3,
+  },
+  {
+    name: 'Masala Chai',
+    description: 'Spiced tea brewed with ginger, cardamom, and milk',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Masala+Chai',
+    price: 15,
+    calories: 70,
+    category: 'beverages',
+    tempOptions: ['hot'],
+    isAvailable: true,
+    preparationMinutes: 3,
+  },
+
+  // DESSERTS
+  {
+    name: 'Gulab Jamun (2pc)',
+    description: 'Soft deep-fried milk dumplings soaked in cardamom-infused sugar syrup',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Gulab+Jamun',
+    price: 30,
+    calories: 210,
+    category: 'desserts',
+    tempOptions: ['cold', 'normal', 'hot'],
+    isAvailable: true,
+    preparationMinutes: 2,
   },
 ];
 
@@ -195,59 +176,47 @@ async function seed() {
     await mongoose.connect(MONGO_URI);
     console.log('Connected to MongoDB');
 
-    // Clear existing data
-    await User.deleteMany({});
-    await MenuItem.deleteMany({});
+    // Drop existing database entirely to allow fresh seeding
+    await mongoose.connection.db?.dropDatabase();
+    console.log('Dropped existing db to re-seed.');
 
-    // Create admin user
-    const adminPassword = await bcrypt.hash('Admin@123', 12);
-    const admin = new User({
-      usn: 'ADMIN001',
-      email: 'admin@dsce.edu.in',
-      passwordHash: adminPassword,
-      name: 'Admin User',
-      role: 'admin',
-      isVerified: true,
-    });
-    await admin.save();
-    console.log('Created admin user: admin@dsce.edu.in / Admin@123');
+    const userCount = await User.countDocuments();
+    const menuCount = await MenuItem.countDocuments();
 
-    // Create manager user
-    const managerPassword = await bcrypt.hash('Manager@123', 12);
-    const manager = new User({
-      usn: 'MGR001',
-      email: 'manager@dsce.edu.in',
-      passwordHash: managerPassword,
-      name: 'Manager User',
-      role: 'manager',
-      isVerified: true,
-    });
-    await manager.save();
-    console.log('Created manager user: manager@dsce.edu.in / Manager@123');
-
-    // Create staff user
-    const staffPassword = await bcrypt.hash('Staff@123', 12);
-    const staff = new User({
-      usn: 'STAFF001',
-      email: 'staff@dsce.edu.in',
-      passwordHash: staffPassword,
-      name: 'Staff User',
-      role: 'staff',
-      isVerified: true,
-    });
-    await staff.save();
-    console.log('Created staff user: staff@dsce.edu.in / Staff@123');
-
-    // Create menu items
-    for (const item of menuItems) {
-      await MenuItem.create(item);
+    if (userCount > 0 && menuCount > 0) {
+      console.log(`Database already has ${userCount} users and ${menuCount} menu items. Skipping seed.`);
+      console.log('To reseed, drop the database first: db.dropDatabase()');
+      process.exit(0);
     }
-    console.log(`Created ${menuItems.length} menu items`);
 
-    console.log('Seeding completed successfully!');
+    // Create users if none exist
+    if (userCount === 0) {
+      const salt = await bcrypt.genSalt(12);
+      await User.create([
+        { name: 'Admin User', email: 'admin@dsce.edu.in', passwordHash: await bcrypt.hash('Admin@123!', salt), usn: '1DS21CS001', role: 'admin', isVerified: true },
+        { name: 'Manager User', email: 'manager@dsce.edu.in', passwordHash: await bcrypt.hash('Manager@123!', salt), usn: '1DS21CS002', role: 'manager', isVerified: true },
+        { name: 'Staff User', email: 'staff@dsce.edu.in', passwordHash: await bcrypt.hash('Staff@123!', salt), usn: '1DS21CS003', role: 'staff', isVerified: true },
+        { name: 'Test Student', email: 'test@dsce.edu.in', passwordHash: await bcrypt.hash('Test@123!', salt), usn: '1DS21CS004', role: 'student', isVerified: true },
+        { name: 'Demo User', email: 'demo@test.com', passwordHash: await bcrypt.hash('Demo@123!', salt), usn: '1DS21CS999', role: 'student', isVerified: true },
+      ]);
+      console.log('✅ Created 5 seed users:');
+      console.log('   admin@dsce.edu.in / Admin@123! (admin)');
+      console.log('   manager@dsce.edu.in / Manager@123! (manager)');
+      console.log('   staff@dsce.edu.in / Staff@123! (staff)');
+      console.log('   test@dsce.edu.in / Test@123! (student)');
+      console.log('   demo@test.com / Demo@123! (student)');
+    }
+
+    // Create menu items if none exist
+    if (menuCount === 0) {
+      await MenuItem.insertMany(menuItems);
+      console.log(`✅ Created ${menuItems.length} menu items`);
+    }
+
+    console.log('\n🎉 Seeding completed successfully!');
     process.exit(0);
   } catch (error) {
-    console.error('Seeding failed:', error);
+    console.error('❌ Seeding failed:', error);
     process.exit(1);
   }
 }
