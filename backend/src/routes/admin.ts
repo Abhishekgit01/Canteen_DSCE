@@ -62,7 +62,7 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
   }
 }
 
-router.get('/profile', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/profile', requireAuth, requireRoles(['staff', 'manager', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = await User.findById(req.user!.id).select('_id name email usn role createdAt');
     if (!user) {
@@ -201,10 +201,10 @@ router.patch(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { role } = req.body as { role?: UserRole };
-      const allowedRoles: UserRole[] = ['student', 'staff', 'manager', 'admin'];
+      const allowedRoles: UserRole[] = ['student', 'staff', 'manager'];
 
       if (!role || !allowedRoles.includes(role)) {
-        return res.status(400).json({ error: 'Invalid role' });
+        return res.status(400).json({ error: 'Invalid role. Cannot assign admin role.' });
       }
 
       if (!mongoose.Types.ObjectId.isValid(req.params.id)) {

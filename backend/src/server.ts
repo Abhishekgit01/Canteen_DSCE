@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 import path from 'path';
 import app from './app.js';
 import dotenv from 'dotenv';
-import { User, MenuItem } from './models/index.js';
+import { User, MenuItem, Order } from './models/index.js';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -142,6 +142,22 @@ mongoose.connect(MONGO_URI)
       ]);
       console.log('✅ Users seeded');
     }
+
+    // Zombie order cleanup — mark abandoned pending_payment orders as failed
+    setInterval(async () => {
+      try {
+        const cutoff = new Date(Date.now() - 15 * 60 * 1000);
+        const result = await Order.updateMany(
+          { status: 'pending_payment', createdAt: { $lt: cutoff } },
+          { $set: { status: 'failed' } },
+        );
+        if (result.modifiedCount > 0) {
+          console.log(`🧹 Cleaned up ${result.modifiedCount} zombie orders`);
+        }
+      } catch (err) {
+        console.error('Zombie order cleanup error:', err);
+      }
+    }, 15 * 60 * 1000);
     
     httpServer.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);

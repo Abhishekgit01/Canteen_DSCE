@@ -127,7 +127,7 @@ export const authApi = {
     api.post<AuthResponse>('/auth/verify-otp', data),
   resendOtp: (data: { email: string }) =>
     api.post('/auth/resend-otp', data),
-  login: (data: { usn: string; password: string }) =>
+  login: (data: { email: string; password: string }) =>
     api.post<AuthResponse>('/auth/login', data),
 };
 
@@ -163,9 +163,9 @@ export const orderApi = {
   getMyOrders: () => api.get('/orders/my'),
   getOrder: (id: string) => api.get(`/orders/${id}`),
   getPaymentConfig: () =>
-    api.get<{ mode: PaymentMode; canteenUpiId?: string; canteenName?: string }>(
-      '/orders/payment-config',
-    ),
+    api.get<{ mode: PaymentMode; canteenUpiId?: string; canteenName?: string }>('/orders/payment-config'),
+  updateOrderStatus: (id: string, status: string) =>
+    api.patch(`/orders/${id}/status`, { status }),
   fulfillOrder: (id: string, qrToken: string) =>
     api.post(`/orders/${id}/fulfill`, { qrToken }),
 };
@@ -183,26 +183,10 @@ export const paymentApi = {
       razorpay_signature: string;
     },
   ) => {
-    const response = await fetch(`${PAYMENT_API_BASE}/api/orders/${orderId}/confirm-razorpay`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-
-    const parsed = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const error = new Error(parsed?.error || 'Payment verification failed') as Error & {
-        response?: { data?: unknown };
-      };
-      error.response = { data: parsed };
-      throw error;
-    }
-
-    return {
-      data: parsed as { orderId: string; qrToken?: string },
-    };
+    const response = await api.post<{ orderId: string; qrToken?: string }>(
+      `/orders/${orderId}/confirm-razorpay`,
+      data,
+    );
+    return response;
   },
 };

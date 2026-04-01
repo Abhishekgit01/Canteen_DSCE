@@ -444,29 +444,23 @@ router.post('/:id/confirm-razorpay', requireAuth, async (req: AuthenticatedReque
       return res.status(400).json({ error: 'Missing payment verification fields' });
     }
 
-    // Verify HMAC signature
-    const expectedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest('hex');
-
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(expectedSignature),
-      Buffer.from(razorpay_signature)
-    );
-
-    if (!isValid) {
-      return res.status(400).json({ error: 'Payment verification failed' });
+    // Verify order ownership
+    const order = await findOwnedOrder(req.params.id, req.user!.id);
+    if (order === null) {
+      return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Find order
-    const order = await Order.findOne({
-      _id: req.params.id,
-      razorpayOrderId: razorpay_order_id
-    });
+    if (order === false) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
 
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+    if (order.razorpayOrderId !== razorpay_order_id) {
+      return res.status(400).json({ error: 'Order ID mismatch' });
+    }
+
+    // Verify HMAC signature
+    if (!verifyRazorpayPaymentSignature(razorpay_order_id, razorpay_payment_id, razorpay_signature)) {
+      return res.status(400).json({ error: 'Payment verification failed' });
     }
 
     // Finalize order using existing finalizeOrder service
@@ -542,6 +536,11 @@ router.post(
 
       io.to(String(order.userId)).emit('order:fulfilled', {
         orderId: String(order._id),
+      });
+
+      io.to(String(order.userId)).emit('order:updated', {
+        orderId: String(order._id),
+        status: 'fulfilled',
       });
 
       io.to('staff').emit('order:update', { order: serializeOrder(order) });
