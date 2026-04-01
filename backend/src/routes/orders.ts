@@ -433,74 +433,64 @@ router.post(
   },
 );
 
-router.post(
-  '/:id/confirm-razorpay',
-  requireAuth,
-  requireRoles(['student']),
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      if (getPaymentMode() !== 'razorpay') {
-        return res.status(403).json({ error: 'Razorpay payments are not active' });
-      }
 
-      const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body as {
-        razorpay_payment_id?: string;
-        razorpay_order_id?: string;
-        razorpay_signature?: string;
-      };
 
-      if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
-        return res.status(400).json({ error: 'Payment verification failed' });
-      }
+// POST /api/orders/:id/confirm-razorpay
+router.post('/:id/confirm-razorpay', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
 
-      const order = await findOwnedOrder(req.params.id, req.user!.id);
-      if (order === null) {
-        return res.status(404).json({ error: 'Order not found' });
-      }
-
-      if (order === false) {
-        return res.status(403).json({ error: 'Not authorized' });
-      }
-
-      if (order.razorpayOrderId !== razorpay_order_id) {
-        console.error('Razorpay order mismatch during confirmation', {
-          orderId: req.params.id,
-          razorpayOrderId: razorpay_order_id,
-        });
-        return res.status(400).json({ error: 'Payment verification failed' });
-      }
-
-      if (
-        !verifyRazorpayPaymentSignature(
-          razorpay_order_id,
-          razorpay_payment_id,
-          razorpay_signature,
-        )
-      ) {
-        console.error('Razorpay signature mismatch', {
-          orderId: req.params.id,
-          razorpayOrderId: razorpay_order_id,
-        });
-        return res.status(400).json({ error: 'Payment verification failed' });
-      }
-
-      const finalized = await finalizeOrder(razorpay_order_id, {
-        razorpayPaymentId: razorpay_payment_id,
-      });
-
-      if (!finalized) {
-        return res.status(404).json({ error: 'Order not found' });
-      }
-
-      return res.json({
-        order: finalized.serializedOrder,
-        qrToken: finalized.qrToken,
-      });
-    } catch {
-      return res.status(500).json({ error: 'Failed to confirm Razorpay payment' });
+    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+      return res.status(400).json({ error: 'Missing payment verification fields' });
     }
-  },
-);
+
+    // Verify HMAC signature
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(expectedSignature),
+      Buffer.from(razorpay_signature)
+    );
+
+    if (!isValid) {
+      return res.status(400).json({ error: 'Payment verification failed' });
+    }
+
+    // Find order
+    const order = await Order.findOne({
+      _id: req.params.id,
+      razorpayOrderId: razorpay_order_id
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Finalize order using existing finalizeOrder service
+    const finalized = await finalizeOrder(razorpay_order_id, {
+      razorpayPaymentId: razorpay_payment_id
+    });
+
+    // Idempotent — already paid
+    if (finalized?.alreadyFinalized) {
+      return res.status(200).json({ orderId: order._id, qrToken: finalized.qrToken, status: 'paid' });
+    }
+
+    const updated = await Order.findById(req.params.id);
+    return res.status(200).json({
+      orderId: updated!._id,
+      qrToken: finalized?.qrToken || undefined,
+      status: updated!.status
+    });
+
+  } catch (err) {
+    console.error('confirm-razorpay error:', err);
+    return res.status(500).json({ error: 'Payment confirmation failed' });
+  }
+});
 
 router.post(
   '/:id/fulfill',

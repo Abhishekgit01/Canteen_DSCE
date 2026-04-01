@@ -6,7 +6,8 @@ import { generateOTP, isEmailConfigured, sendOTPEmail } from '../utils/email.js'
 import { lookupStudentByUsn, normalizeUsn } from '../services/student-registry.service.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not set in environment variables');
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 type AuthVerificationMode = 'auto' | 'email' | 'none';
 
@@ -65,17 +66,16 @@ router.post('/signup', async (req: Request, res: Response) => {
     const { usn, email, password, name } = req.body;
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const student = lookupStudentByUsn(String(usn || ''));
-    const fallbackName = String(name || '').trim().replace(/\s+/g, ' ');
     const resolvedUsn = student?.usn ?? normalizeUsn(String(usn || ''));
-    const resolvedName = student?.name ?? fallbackName;
+    const resolvedName = student?.name;
 
     if (!resolvedUsn) {
       return res.status(400).json({ error: 'Please enter a valid USN' });
     }
 
-    if (!student && !resolvedName) {
-      return res.status(400).json({
-        error: 'USN not found in the DSCE first-year roster. Enter your name to continue.',
+    if (!student) {
+      return res.status(403).json({
+        error: 'USN not found in student roster. Contact admin if this is a mistake.',
       });
     }
 
@@ -96,7 +96,7 @@ router.post('/signup', async (req: Request, res: Response) => {
     let user = existingUser;
 
     if (existingUser) {
-      existingUser.name = resolvedName;
+      existingUser.name = resolvedName!;
       existingUser.usn = resolvedUsn;
       existingUser.email = normalizedEmail;
       existingUser.passwordHash = passwordHash;
@@ -248,13 +248,13 @@ router.post('/resend-otp', async (req: Request, res: Response) => {
 // Login
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { usn, password } = req.body;
-    const normalizedUsn = normalizeUsn(String(usn || ''));
-    const user = await User.findOne({ usn: normalizedUsn }).select('+passwordHash');
-    if (!user || !user.isVerified) return res.status(401).json({ error: 'Invalid credentials' });
+    const { email, password } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash');
+    if (!user || !user.isVerified) return res.status(401).json({ error: 'Invalid email or password' });
 
     const isValid = await bcrypt.compare(password, user.passwordHash);
-    if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!isValid) return res.status(401).json({ error: 'Invalid email or password' });
 
     res.json(createAuthResponse(user));
   } catch (error) {

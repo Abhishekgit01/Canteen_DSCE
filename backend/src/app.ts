@@ -4,12 +4,12 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
+import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
 import adminRoutes from './routes/admin.js';
-import { razorpayWebhookHandler } from './routes/webhook.js';
 
 dotenv.config();
 
@@ -33,41 +33,49 @@ app.use(cors({
   credentials: true,
 }));
 
-// Rate limiting temporarily disabled for deployment
 // 3. Global rate limit - 100 requests per 15 minutes
-// const globalLimiter = rateLimit({
-//   windowMs: 15 * 60 * 1000,
-//   max: 100,
-//   message: 'Too many requests, please try again later',
-//   standardHeaders: true,
-//   legacyHeaders: false,
-// });
-// app.use(globalLimiter);
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many requests, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(globalLimiter);
 
 // 4. Stricter rate limit on /api/auth - 10 requests per 15 minutes
-// const authLimiter = rateLimit({
-//   windowMs: 15 * 60 * 1000,
-//   max: 10,
-//   message: 'Too many auth requests, please try again later',
-//   standardHeaders: true,
-//   legacyHeaders: false,
-// });
-// app.use('/api/auth', authLimiter);
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many auth requests, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/auth', authLimiter);
 
 // 5. Strictest rate limit on /api/auth/login - 5 per 15 minutes (brute force protection)
-// const loginLimiter = rateLimit({
-//   windowMs: 15 * 60 * 1000,
-//   max: 5,
-//   message: 'Too many login attempts, please try again in 15 minutes',
-//   standardHeaders: true,
-//   legacyHeaders: false,
-// });
-// app.use('/api/auth/login', loginLimiter);
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'Too many login attempts, please try again in 15 minutes',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/auth/login', loginLimiter);
 
-// Razorpay webhook needs the raw body for signature verification.
-app.post('/webhook/razorpay', express.raw({ type: 'application/json' }), razorpayWebhookHandler);
+// The Razorpay webhook is handled by the cloudflare payment-worker hub.
+
+import { razorpayWebhookHandler } from './routes/webhook.js';
+
+// THIS MUST BE BEFORE express.json() — raw body required for HMAC
+app.post(
+  '/webhook/razorpay',
+  express.raw({ type: 'application/json' }),
+  razorpayWebhookHandler
+);
 
 // 6. JSON body parser with size limit
+// express.json() comes AFTER
 app.use(express.json({ limit: '10kb' }));
 
 // 7. Mongo sanitize - prevents NoSQL injection
@@ -103,9 +111,14 @@ app.use((req, _res, next) => {
 // 9. HPP - HTTP Parameter Pollution Prevention
 app.use(hpp());
 
-// Health check
+// Health check with MongoDB status
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    paymentMode: process.env.PAYMENT_MODE || 'mock',
+  });
 });
 
 // Root route for Razorpay verification

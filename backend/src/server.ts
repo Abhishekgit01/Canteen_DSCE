@@ -4,11 +4,12 @@ import { Server as SocketIOServer } from 'socket.io';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import path from 'path';
 import app from './app.js';
 import dotenv from 'dotenv';
 import { User, MenuItem } from './models/index.js';
 
-dotenv.config();
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/dsce-canteen';
@@ -97,7 +98,7 @@ export { io };
 app.post('/internal/emit', express.json(), (req, res) => {
   const { secret, event, payload } = req.body ?? {};
 
-  if (secret !== process.env.INTERNAL_SECRET) {
+  if (!process.env.INTERNAL_SECRET || secret !== process.env.INTERNAL_SECRET) {
     return res.sendStatus(403);
   }
 
@@ -134,10 +135,10 @@ mongoose.connect(MONGO_URI)
       console.log('🌱 Seeding database...');
       const salt = await bcrypt.genSalt(12);
       await User.create([
-        { name: 'Admin User', email: 'admin@dsce.edu.in', passwordHash: await bcrypt.hash('Admin@123', salt), usn: '1DS22AD001', role: 'admin', isVerified: true },
-        { name: 'Manager User', email: 'manager@dsce.edu.in', passwordHash: await bcrypt.hash('Manager@123', salt), usn: '1DS22MG001', role: 'manager', isVerified: true },
-        { name: 'Staff User', email: 'staff@dsce.edu.in', passwordHash: await bcrypt.hash('Staff@123', salt), usn: '1DS22SF001', role: 'staff', isVerified: true },
-        { name: 'Test Student', email: 'test@dsce.edu.in', passwordHash: await bcrypt.hash('Test@123', salt), usn: '1DS22CS001', role: 'student', isVerified: true }
+        { name: 'Admin User', email: 'admin@dsce.edu.in', passwordHash: await bcrypt.hash('Admin@123!', salt), usn: '1DS21CS001', role: 'admin', isVerified: true },
+        { name: 'Manager User', email: 'manager@dsce.edu.in', passwordHash: await bcrypt.hash('Manager@123!', salt), usn: '1DS21CS002', role: 'manager', isVerified: true },
+        { name: 'Staff User', email: 'staff@dsce.edu.in', passwordHash: await bcrypt.hash('Staff@123!', salt), usn: '1DS21CS003', role: 'staff', isVerified: true },
+        { name: 'Test Student', email: 'test@dsce.edu.in', passwordHash: await bcrypt.hash('Test@123!', salt), usn: '1DS21CS004', role: 'student', isVerified: true }
       ]);
       console.log('✅ Users seeded');
     }
