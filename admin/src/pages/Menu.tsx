@@ -12,6 +12,7 @@ interface MenuItem {
   category: string;
   tempOptions: string[];
   isAvailable: boolean;
+  isFeatured?: boolean;
 }
 
 export default function MenuPage() {
@@ -27,6 +28,7 @@ export default function MenuPage() {
     category: 'meals',
     tempOptions: [] as string[],
     isAvailable: true,
+    isFeatured: false,
   });
 
   useEffect(() => {
@@ -67,6 +69,7 @@ export default function MenuPage() {
         category: 'meals',
         tempOptions: [],
         isAvailable: true,
+        isFeatured: false,
       });
       fetchMenu();
     } catch (error) {
@@ -80,6 +83,15 @@ export default function MenuPage() {
       fetchMenu();
     } catch (error) {
       console.error('Failed to update availability:', error);
+    }
+  };
+
+  const handleToggleFeatured = async (item: MenuItem) => {
+    try {
+      await menuApi.updateItem(item._id, { isFeatured: !item.isFeatured });
+      fetchMenu();
+    } catch (error) {
+      console.error('Failed to update featured status:', error);
     }
   };
 
@@ -171,6 +183,7 @@ export default function MenuPage() {
             <th>Price</th>
             <th>Calories</th>
             <th>Available</th>
+            <th>Featured</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -195,6 +208,16 @@ export default function MenuPage() {
                 </label>
               </td>
               <td>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={!!item.isFeatured}
+                    onChange={() => handleToggleFeatured(item)}
+                  />
+                  <span className="slider"></span>
+                </label>
+              </td>
+              <td>
                 <button
                   className="btn btn-secondary"
                   onClick={() => {
@@ -208,6 +231,7 @@ export default function MenuPage() {
                       category: item.category,
                       tempOptions: item.tempOptions,
                       isAvailable: item.isAvailable,
+                      isFeatured: !!item.isFeatured,
                     });
                   }}
                 >

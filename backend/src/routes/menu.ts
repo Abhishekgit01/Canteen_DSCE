@@ -26,6 +26,7 @@ type MenuBody = {
   category?: string;
   tempOptions?: string[];
   isAvailable?: boolean;
+  isFeatured?: boolean;
   preparationMinutes?: number;
 };
 
@@ -145,6 +146,14 @@ function validateMenuPayload(input: MenuBody, isPartial = false) {
       errors.push('isAvailable must be a boolean');
     } else {
       payload.isAvailable = input.isAvailable;
+    }
+  }
+
+  if (input.isFeatured !== undefined) {
+    if (typeof input.isFeatured !== 'boolean') {
+      errors.push('isFeatured must be a boolean');
+    } else {
+      payload.isFeatured = input.isFeatured;
     }
   }
 

@@ -11,6 +11,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppIcon from '../components/AppIcon';
+import { useFavoritesStore } from '../stores/favoritesStore';
 import { useCartStore } from '../stores/cartStore';
 import { RootStackNavigationProp, RootStackRouteProp } from '../types';
 import { palette, shadows } from '../theme';
@@ -22,6 +23,7 @@ export default function ItemDetailScreen() {
   const insets = useSafeAreaInsets();
   const { item } = route.params;
   const { addItem } = useCartStore();
+  const { isFavorite, toggleFavorite } = useFavoritesStore();
 
   const [selectedTemp, setSelectedTemp] = useState(item.tempOptions[0] || 'normal');
   const [quantity, setQuantity] = useState(1);
@@ -49,9 +51,13 @@ export default function ItemDetailScreen() {
       >
         <View style={styles.hero}>
           <Image source={{ uri: item.imageUrl }} style={styles.heroImage} />
-          <View style={[styles.heroOverlay, { paddingTop: insets.top + 10 }]}>
+          <View style={[styles.heroOverlay, { paddingTop: insets.top + 10, flexDirection: 'row', justifyContent: 'space-between' }]}>
             <TouchableOpacity activeOpacity={0.9} style={styles.backButton} onPress={() => navigation.goBack()}>
               <AppIcon name="arrow-left" size={20} color={palette.surface} />
+            </TouchableOpacity>
+
+            <TouchableOpacity activeOpacity={0.9} style={styles.backButton} onPress={() => toggleFavorite(item.id)}>
+              <AppIcon name={isFavorite(item.id) ? "heart" : "heart-outline"} size={20} color={isFavorite(item.id) ? "#EF4444" : palette.surface} />
             </TouchableOpacity>
           </View>
         </View>

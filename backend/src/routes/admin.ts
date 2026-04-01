@@ -126,7 +126,11 @@ router.get(
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
 
-      const [ordersToday, revenueResult, pendingOrders, popularItems] = await Promise.all([
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+
+      const [ordersToday, revenueResult, pendingOrders, popularItems, revenueHistory] = await Promise.all([
         Order.countDocuments({ createdAt: { $gte: startOfDay } }),
         Order.aggregate([
           {
@@ -154,6 +158,21 @@ router.get(
           { $sort: { quantity: -1 } },
           { $limit: 1 },
         ]),
+        Order.aggregate([
+          {
+            $match: {
+              createdAt: { $gte: sevenDaysAgo },
+              status: { $in: ['paid', 'preparing', 'ready', 'fulfilled'] },
+            },
+          },
+          {
+            $group: {
+              _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+              revenue: { $sum: '$totalAmount' },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ]),
       ]);
 
       res.json({
@@ -161,6 +180,10 @@ router.get(
         revenueToday: revenueResult[0]?.total || 0,
         pendingOrders,
         popularItem: popularItems[0]?._id || 'None',
+        revenueHistory: revenueHistory.map((day) => ({
+          date: day._id,
+          revenue: day.revenue,
+        })),
       });
     } catch {
       res.status(500).json({ error: 'Failed to fetch stats' });

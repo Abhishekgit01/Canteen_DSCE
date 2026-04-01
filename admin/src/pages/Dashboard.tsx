@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
 import { statsApi, ordersApi } from '../api';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import { useSocket } from '../hooks/useSocket';
 import './Dashboard.css';
 
@@ -9,6 +18,7 @@ export default function DashboardPage() {
     revenueToday: 0,
     pendingOrders: 0,
     popularItem: 'None',
+    revenueHistory: [],
   });
   const [recentOrders, setRecentOrders] = useState([]);
   const socket = useSocket();
@@ -71,7 +81,29 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="recent-orders">
+      <div className="chart-container" style={{ marginTop: '20px', backgroundColor: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+        <h2 style={{ marginBottom: '20px', fontSize: '1.2rem', color: '#1a1d20' }}>7-Day Revenue History</h2>
+        <div style={{ width: '100%', height: 300 }}>
+          <ResponsiveContainer>
+            <BarChart
+              data={stats.revenueHistory}
+              margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+              <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#64748B' }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B' }} tickFormatter={(value) => `₹${value}`} />
+              <Tooltip 
+                cursor={{ fill: '#F1F5F9' }}
+                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                formatter={(value: number) => [`₹${value}`, 'Revenue']}
+              />
+              <Bar dataKey="revenue" fill="#f5821f" radius={[4, 4, 0, 0]} maxBarSize={50} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="recent-orders" style={{ marginTop: '20px' }}>
         <h2>Recent Orders</h2>
         <table className="table">
           <thead>

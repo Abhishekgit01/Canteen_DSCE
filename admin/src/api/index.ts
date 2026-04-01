@@ -49,7 +49,7 @@ export const menuApi = {
 };
 
 export const ordersApi = {
-  getOrders: () => api.get('/orders'),
+  getOrders: () => api.get('/admin/orders'),
   getOrderById: (orderId: string) => api.get(`/orders/${orderId}`),
   createOrder: (items: any[]) => api.post('/orders', { items }),
   updateOrderStatus: (orderId: string, status: string) =>

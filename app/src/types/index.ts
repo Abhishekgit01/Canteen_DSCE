@@ -26,6 +26,7 @@ export interface MenuItem {
   category: 'meals' | 'snacks' | 'beverages' | 'desserts';
   tempOptions: ('cold' | 'normal' | 'hot')[];
   isAvailable: boolean;
+  isFeatured?: boolean;
 }
 
 export interface CartItem {

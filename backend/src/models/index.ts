@@ -161,6 +161,10 @@ const menuItemSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  isFeatured: {
+    type: Boolean,
+    default: false,
+  },
   preparationMinutes: {
     type: Number,
     default: 10,

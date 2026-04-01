@@ -17,12 +17,14 @@ import FoodCard from '../components/FoodCard';
 import SkeletonCard from '../components/SkeletonCard';
 import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
+import { useFavoritesStore } from '../stores/favoritesStore';
 import { MainTabNavigationProp, MenuItem } from '../types';
 import { palette, shadows } from '../theme';
 import { getDefaultPickupTime, getLunchRushInfo } from '../utils/pickupTime';
 
 const categories = [
   { key: 'All', label: 'All' },
+  { key: 'Favorites', label: 'Favorites ❤️' },
   { key: 'meals', label: 'Meals' },
   { key: 'snacks', label: 'Snacks' },
   { key: 'beverages', label: 'Beverages' },
@@ -35,6 +37,7 @@ export default function HomeScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { user } = useAuthStore();
   const { items, addItem, updateQuantity, total } = useCartStore();
+  const { isFavorite } = useFavoritesStore();
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [loading, setLoading] = useState(true);
@@ -79,6 +82,8 @@ export default function HomeScreen() {
   const filteredItems =
     selectedCategory === 'All'
       ? menuItems
+      : selectedCategory === 'Favorites'
+      ? menuItems.filter((item) => isFavorite(item.id) || item.isFeatured)
       : menuItems.filter((item) => item.category === selectedCategory);
 
   const cartCount = items.reduce((sum, item) => sum + item.quantity, 0);

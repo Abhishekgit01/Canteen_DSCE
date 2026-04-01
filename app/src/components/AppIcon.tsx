@@ -12,6 +12,8 @@ export type AppIconName =
   | 'credit-card-outline'
   | 'fire'
   | 'help-circle-outline'
+  | 'heart'
+  | 'heart-outline'
   | 'home'
   | 'log-out'
   | 'map-pin'
@@ -37,6 +39,8 @@ const glyphs: Record<AppIconName, React.ComponentProps<typeof MaterialCommunityI
   'credit-card-outline': 'credit-card-outline',
   fire: 'fire',
   'help-circle-outline': 'help-circle-outline',
+  heart: 'heart',
+  'heart-outline': 'heart-outline',
   home: 'home-outline',
   'log-out': 'logout',
   'map-pin': 'map-marker-outline',
