@@ -6,8 +6,10 @@ import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import SplashScreen from './screens/SplashScreen';
+import WelcomeScreen from './screens/WelcomeScreen';
 import AuthScreen from './screens/AuthScreen';
 import OtpScreen from './screens/OtpScreen';
+import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import HomeScreen from './screens/HomeScreen';
 import SearchScreen from './screens/SearchScreen';
 import ItemDetailScreen from './screens/ItemDetailScreen';
@@ -15,6 +17,7 @@ import CartScreen from './screens/CartScreen';
 import PaymentScreen from './screens/PaymentScreen';
 import OrderQRScreen from './screens/OrderQRScreen';
 import OrderSuccessScreen from './screens/OrderSuccessScreen';
+import PaymentSuccessScreen from './screens/PaymentSuccessScreen';
 import OrdersScreen from './screens/OrdersScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ScannerScreen from './screens/ScannerScreen';
@@ -129,11 +132,18 @@ export default function Navigation() {
             <Stack.Screen name="Payment" component={PaymentScreen} />
             <Stack.Screen name="OrderQR" component={OrderQRScreen} />
             <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />
+            <Stack.Screen 
+              name="PaymentSuccess" 
+              component={PaymentSuccessScreen} 
+              options={{ headerShown: false, gestureEnabled: false }} 
+            />
           </>
         ) : (
           <>
+            <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="Auth" component={AuthScreen} />
             <Stack.Screen name="Otp" component={OtpScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
           </>
         )}
       </Stack.Navigator>

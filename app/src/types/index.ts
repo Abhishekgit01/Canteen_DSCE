@@ -12,9 +12,13 @@ export interface User {
   usn: string;
   email: string;
   name: string;
+  college?: College;
   role: 'student' | 'staff' | 'manager' | 'admin';
   isVerified: boolean;
 }
+
+export type College = 'DSCE' | 'NIE';
+export type OtpPurpose = 'signup' | 'password_reset';
 
 export interface MenuItem {
   id: string;
@@ -105,14 +109,35 @@ export type MainTabParamList = {
 
 export type RootStackParamList = {
   Splash: undefined;
-  Auth: undefined;
-  Otp: { email: string };
+  Welcome: undefined;
+  Auth:
+    | {
+        selectedCollege?: College;
+        initialMode?: 'login' | 'signup';
+        prefilledEmail?: string;
+      }
+    | undefined;
+  Otp: { email: string; purpose: OtpPurpose };
+  ForgotPassword: { prefilledEmail?: string } | undefined;
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
   Search: undefined;
   ItemDetail: { item: MenuItem };
   Payment: PaymentInitResponse;
   OrderQR: { orderId: string; qrToken: string };
   OrderSuccess: { orderId: string };
+  PaymentSuccess: {
+    orderId: string;
+    qrToken: string;
+    amount: number;
+    items: {
+      name: string;
+      quantity: number;
+      price: number;
+    }[];
+    studentName: string;
+    college: string;
+    paidAt: string;
+  };
 };
 
 export type RootStackNavigationProp<

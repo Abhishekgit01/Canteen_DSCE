@@ -1,60 +1,95 @@
 # Ybyte Canteen App Architecture & Context
 
-This document is designed to give AI assistants a complete overview of the Ybyte (formerly DSCE Canteen) ordering platform without needing to parse the entire codebase.
+This document gives AI assistants a working overview of the Ybyte canteen platform without needing to reverse-engineer the whole repo first.
 
 ## 1. Project Structure
-The project is split into three main components:
-- `/app`: The mobile application built with React Native and Expo (SDK 54).
-- `/backend`: The primary Node.js/Express API deployed on Render, connecting to MongoDB Atlas.
-- `/workers/canteen-payments`: A Cloudflare Worker specifically handling Razorpay webhooks and payment verifications securely.
+- `/app`: The current customer-facing mobile app built with React Native and Expo (SDK 54).
+- `/backend`: The primary Node.js/Express API deployed on Render, connected to MongoDB Atlas.
+- `/workers/canteen-payments`: A Cloudflare Worker used for Razorpay webhook and payment verification handling.
 
 ## 2. Tech Stack & Key Libraries
-- **Mobile (React Native/Expo)**:
-  - Navigation: `@react-navigation/native` & `@react-navigation/bottom-tabs`.
-  - State Management: `zustand` (stores in `app/src/stores/`).
-  - Network: `axios` (configured in `app/src/api/index.ts` with auto-JWT attachment).
-  - Storage: `expo-secure-store` for JWT holding.
-  - UI Elements: No major component libraries. Entirely custom UI with `expo-vector-icons` and `@react-native-community/datetimepicker`.
-  - Realtime: `socket.io-client` listening to backend updates.
-  - Payments: `react-native-razorpay` used in `PaymentScreen.tsx`.
-
-- **Backend (Node.js/Express)**:
-  - Database: `mongoose` with models in `backend/src/models/`.
-  - Auth: JWT-based (`access_token`, `refresh_token`), with `bcrypt` for passwords.
-  - APIs: Grouped in routers (`auth.ts`, `menu.ts`, `orders.ts`, `admin.ts`, `webhook.ts`).
-  - Realtime: `socket.io` server attached to Express.
-  - Cleanups: `server.ts` runs a `setInterval` every 15 minutes to automatically mark `pending_payment` orders as `failed` to prevent zombie cart blocking.
+- **Mobile (React Native / Expo)**:
+  - Navigation: `@react-navigation/native`, `@react-navigation/native-stack`, `@react-navigation/bottom-tabs`
+  - State: `zustand`
+  - Networking: `axios` via `app/src/api/index.ts`
+  - Persistence: `@react-native-async-storage/async-storage`
+  - Realtime: `socket.io-client`
+  - Payments: `react-native-razorpay`
+  - UI: fully custom React Native screens styled with the local `theme.ts`
+- **Backend (Node.js / Express)**:
+  - Database: `mongoose`
+  - Auth: JWT + `bcryptjs`
+  - Email OTP: `nodemailer`
+  - Realtime: `socket.io`
+  - Background cleanup: `setInterval` in `server.ts` for stale pending-payment orders
 
 ## 3. Data Models
-- **User**: Name, Email, PasswordHash, USN, Role (`student`, `staff`, `manager`, `admin`).
-- **MenuItem**: Name, Category, Price, ImageUrl (dummyimage.com), TempOptions (e.g. ['normal', 'hotbed']).
+- **User**:
+  - Core fields: `name`, `email`, `passwordHash`, `usn`, `role`, `isVerified`
+  - College field exists for multi-campus handling.
+  - Current mobile flow surfaces `DSCE` and `NIE`.
+  - Legacy `DSATM` values may still exist in stored data and are still tolerated in the model.
+- **MenuItem**:
+  - `name`, `description`, `imageUrl`, `price`, `calories`, `category`, `tempOptions`, availability metadata
 - **Order**:
-  - Contains `items` (ref MenuItem, quantity, tempPreference).
-  - Contains `timeline` for tracking order state changes.
-  - Contains `status`: `pending_payment` -> `preparing` -> `ready` -> `completed` (or `failed`/`abandoned`).
-  - Important Field: `isVerified` (boolean) and `razorpayOrderId`.
+  - `items`, `scheduledTime`, `totalAmount`, payment identifiers, QR-token fields, timestamps
+  - Status lifecycle: `pending_payment` -> `paid` -> `preparing` -> `ready` -> `fulfilled` -> `failed`
+  - Includes a `college` field for multi-campus boundaries
+- **OTP**:
+  - Stores hashed OTP codes by `email`
+  - Purpose-aware flows currently include `signup` and `password_reset`
 
 ## 4. Key Workflows
 
-### Checkout & Payment Flow
-1. User builds cart via `CartStore`.
-2. Taps "Create Order" -> calls `POST /api/orders` sending items and `scheduledTime`.
-3. Backend creates order in DB. Critically, it checks the backend `.env` (`PAYMENT_MODE`).
-   - If `PAYMENT_MODE=razorpay`, it creates a real Razorpay Order ID via the SDK, and returns `mode: 'razorpay'`.
-4. Mobile App routes to `PaymentScreen.tsx`.
-   - If `mode === 'razorpay'`, it immediately initializes the `react-native-razorpay` checkout modal.
-   - Upon success, the app holds the Razorpay signatures and hits `POST /api/orders/:id/confirm-razorpay`.
-5. Backend verifies the signature in `confirm-razorpay` (also ensuring the order *belongs* to the calling user via JWT). Marks it `preparing` and emits a socket event.
+### Welcome, Signup, OTP, Password Recovery
+1. Unauthenticated users land on a welcome screen and choose their active campus: `DSCE` or `NIE`.
+2. The app routes into `AuthScreen.tsx` with that campus preselected.
+3. Signup posts to `POST /api/auth/signup` with `usn`, `email`, `password`, `college`, and a name when needed.
+4. Campus-specific behavior:
+   - `DSCE`: attempts roster lookup from `student-roster.json`, but still allows manual name entry if the USN is missing.
+   - `NIE`: currently uses manual name entry instead of roster lookup.
+5. If OTP verification is enabled, signup navigates to `OtpScreen.tsx` and calls `POST /api/auth/verify-otp`.
+6. Password recovery is OTP-based:
+   - `POST /api/auth/forgot-password/request` sends the reset OTP
+   - `POST /api/auth/forgot-password/reset` verifies the OTP, updates the password, and returns auth data
+7. The login screen exposes a “Forgot password?” entry point that reuses the same OTP UI.
 
-### Staff Fulfilling Orders (QR Code Scanning)
-1. User's app dynamically generates a QR code from the order ID and a secure secret signing payload (in `TicketScreen.tsx`).
-2. Staff log in using the same app but with a `staff` role account.
-3. Staff app has an additional tab: the QR Scanner.
-4. Staff scan the user's order QR code.
-5. The scan triggers `PATCH /api/orders/:id/fulfill` on the backend.
-6. The backend marks the order `completed`, records the timeline, and emits socket events (`order:updated`, `order:fulfilled`) to alert the user across the room.
+### Checkout & Payment Flow
+1. User builds a cart in the mobile app.
+2. App calls `POST /api/orders/create` with items and `scheduledTime`.
+3. Backend creates the order with `pending_payment`.
+4. If `PAYMENT_MODE=razorpay`, backend creates a Razorpay order and returns payment init data.
+5. App opens Razorpay from `PaymentScreen.tsx`.
+6. On success, app confirms payment via `POST /api/orders/:id/confirm-razorpay`.
+7. Backend verifies ownership and Razorpay signature, finalizes the order, emits `order:paid`, and returns the QR pickup token.
+8. App routes to `PaymentSuccessScreen.tsx`.
+
+### Staff Fulfillment / QR Pickup
+1. The user receives a QR token tied to the paid order.
+2. Staff accounts use the same mobile app and get scanner access.
+3. Staff scan the QR code and call `POST /api/orders/:id/fulfill`.
+4. Backend verifies the token, marks the order as `fulfilled`, and emits `order:fulfilled` plus `order:updated`.
 
 ## 5. Environment Map
-- **App**: Needs `EXPO_PUBLIC_API_URL` pointing to backend.
-- **Backend Render**: Needs `MONGO_URI`, `JWT_SECRET`, `PAYMENT_MODE=razorpay`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `INTERNAL_SECRET`, etc.
-- **Cloudflare Worker**: Needs `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` for validating payloads out-of-band.
+- **Mobile app**:
+  - `EXPO_PUBLIC_API_URL`
+  - optionally `EXPO_PUBLIC_PAYMENT_API_URL`
+- **Backend**:
+  - `MONGO_URI`
+  - `JWT_SECRET`
+  - `PAYMENT_MODE`
+  - `RAZORPAY_KEY_ID`
+  - `RAZORPAY_KEY_SECRET`
+  - `RAZORPAY_WEBHOOK_SECRET`
+  - `INTERNAL_SECRET`
+  - `EMAIL_USER`, `EMAIL_PASS` if OTP-based signup / password reset should work
+- **Cloudflare Worker**:
+  - `RAZORPAY_KEY_SECRET`
+  - `RAZORPAY_WEBHOOK_SECRET`
+
+## 6. Current Architecture Notes
+- A shared env loader now initializes backend environment variables before route imports read `process.env`.
+- Socket events are standardized around `order:paid`, `order:updated`, and `order:fulfilled`.
+- `server.ts` runs zombie-order cleanup every 15 minutes after MongoDB connects.
+- Admin routes are role-protected for staff, manager, and admin access.
+- The Expo app is currently the main mobile surface being iterated on for auth, ordering, payment success, and QR pickup UX.

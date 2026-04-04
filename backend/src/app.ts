@@ -1,3 +1,4 @@
+import './config/env.js';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -5,13 +6,10 @@ import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
 import mongoose from 'mongoose';
-import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
 import adminRoutes from './routes/admin.js';
-
-dotenv.config();
 
 const app = express();
 

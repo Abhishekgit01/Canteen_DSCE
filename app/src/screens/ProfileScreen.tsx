@@ -42,7 +42,7 @@ export default function ProfileScreen() {
   const handleCampusAccount = () => {
     Alert.alert(
       'Campus Account',
-      `${user?.name || 'DSCE Student'}\n${user?.usn || ''}\n${user?.email || ''}`,
+      `${user?.name || 'Campus Student'}\n${user?.usn || ''}\n${user?.email || ''}\n${user?.college || 'College not set'}`,
     );
   };
 
@@ -117,6 +117,7 @@ export default function ProfileScreen() {
             <Text style={styles.name}>{user?.name || 'DSCE Student'}</Text>
             <Text style={styles.meta}>{user?.usn}</Text>
             <Text style={styles.meta}>{user?.email}</Text>
+            {user?.college ? <Text style={styles.meta}>{user.college}</Text> : null}
           </View>
         </View>
 

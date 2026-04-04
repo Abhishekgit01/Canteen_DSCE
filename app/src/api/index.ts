@@ -1,7 +1,7 @@
 import axios, { type AxiosResponse } from 'axios';
 import { NativeModules, Platform } from 'react-native';
 import { useAuthStore } from '../stores/authStore';
-import type { Order, PaymentInitResponse, PaymentMode, User } from '../types';
+import type { College, Order, PaymentInitResponse, PaymentMode, User } from '../types';
 import { normalizeMenuItems } from '../utils/menu';
 
 const normalizeOrigin = (value?: string | null): string | null => {
@@ -121,12 +121,16 @@ type SignupResponse =
 export const authApi = {
   lookupStudent: (usn: string) =>
     api.get<{ usn: string; name: string }>(`/auth/student/${encodeURIComponent(usn)}`),
-  signup: (data: { usn: string; email: string; password: string; name?: string }) =>
+  signup: (data: { usn: string; email: string; password: string; name?: string; college: College }) =>
     api.post<SignupResponse>('/auth/signup', data),
   verifyOtp: (data: { email: string; code: string }) =>
     api.post<AuthResponse>('/auth/verify-otp', data),
   resendOtp: (data: { email: string }) =>
     api.post('/auth/resend-otp', data),
+  requestPasswordResetOtp: (data: { email: string }) =>
+    api.post<{ message: string }>('/auth/forgot-password/request', data),
+  resetPasswordWithOtp: (data: { email: string; code: string; password: string }) =>
+    api.post<AuthResponse>('/auth/forgot-password/reset', data),
   login: (data: { email: string; password: string }) =>
     api.post<AuthResponse>('/auth/login', data),
 };

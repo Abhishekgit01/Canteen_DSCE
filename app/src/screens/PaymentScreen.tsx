@@ -12,6 +12,7 @@ import {
   ScrollView,
   TextInput,
 } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as IntentLauncher from 'expo-intent-launcher';
@@ -85,6 +86,8 @@ export default function PaymentScreen() {
   const hasNavigatedRef = useRef(false);
   const razorpayStartedRef = useRef(false);
   const [canCheckPaymentStatus, setCanCheckPaymentStatus] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [isPhoneModalVisible, setIsPhoneModalVisible] = useState(false);
 
   const shortOrderId = orderId.slice(-6).toUpperCase();
   const upiPayment = mode === 'upi_link' ? (payment as UpiLinkPaymentInitResponse) : null;
@@ -95,6 +98,15 @@ export default function PaymentScreen() {
     upiAppOptions.find((option) => option.key === selectedUpiApp)?.label || 'Google Pay';
 
   useEffect(() => {
+    // Load cached phone number
+    const loadPhone = async () => {
+      const cached = await SecureStore.getItemAsync('user_phone');
+      if (cached) {
+        setPhoneNumber(cached);
+      }
+    };
+    void loadPhone();
+
     if (mode !== 'mock') {
       return;
     }
@@ -149,7 +161,28 @@ export default function PaymentScreen() {
 
     hasNavigatedRef.current = true;
     await clearCart();
-    navigation.replace('OrderQR', { orderId, qrToken });
+    
+    try {
+      const response = await orderApi.getOrder(orderId);
+      const order = response.data;
+      
+      navigation.replace('PaymentSuccess', {
+        orderId: order.id || order._id || orderId,
+        qrToken: qrToken,
+        amount: order.totalAmount,
+        items: order.items.map((i: any) => ({
+          name: i.name || i.menuItem?.name || 'Item',
+          quantity: i.quantity,
+          price: i.price || 0
+        })),
+        studentName: user?.name || '',
+        college: user?.college || '',
+        paidAt: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('Failed to fetch full order; falling back to OrderQR', e);
+      navigation.replace('OrderQR', { orderId, qrToken });
+    }
   };
 
   const fetchQrAndNavigate = async () => {
@@ -276,7 +309,7 @@ export default function PaymentScreen() {
         name: 'DSCE Canteen',
         description: 'Food Order',
         prefill: {
-          contact: '',
+          contact: phoneNumber,
           email: user?.email || '',
         },
         theme: {
@@ -307,6 +340,11 @@ export default function PaymentScreen() {
       }
 
       await waitForOrderQr();
+      
+      // Save phone number on success
+      if (phoneNumber) {
+        await SecureStore.setItemAsync('user_phone', phoneNumber);
+      }
     } catch (error) {
       if (hasNavigatedRef.current) {
         return;
@@ -573,10 +611,24 @@ export default function PaymentScreen() {
           <>
             <View style={styles.razorpayCard}>
               <Text style={styles.amount}>₹{formatAmount(amount)}</Text>
-              <Text style={styles.mutedText}>Launching Razorpay checkout</Text>
-              <Text style={styles.mutedText}>
-                Stay on this screen until payment is confirmed. First-time verification can take a few extra seconds.
-              </Text>
+              
+              <View style={styles.phoneSection}>
+                <Text style={styles.fieldLabel}>Mobile Number (for Razorpay)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={phoneNumber}
+                  onChangeText={setPhoneNumber}
+                  placeholder="Enter 10-digit mobile number"
+                  placeholderTextColor="#6b7280"
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                />
+                <Text style={styles.inputHelper}>
+                  We'll remember this for your next order.
+                </Text>
+              </View>
+
+              <Text style={styles.mutedText}>Launching Razorpay checkout...</Text>
             </View>
 
             <TouchableOpacity
@@ -727,6 +779,17 @@ const styles = StyleSheet.create({
     marginTop: 18,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
+  },
+  phoneSection: {
+    width: '100%',
+    marginTop: 16,
+    marginBottom: 16,
+  },
+  fieldLabel: {
+    color: '#8f9bb3',
+    fontSize: 14,
+    marginBottom: 8,
+    fontWeight: '600',
   },
   amount: {
     fontSize: 40,

@@ -60,7 +60,12 @@ export default function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(true);
   const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
-  const [result, setResult] = useState<{ type: 'success' | 'error'; message: string; name?: string } | null>(null);
+  const [result, setResult] = useState<{ 
+    type: 'success' | 'error'; 
+    message: string; 
+    name?: string;
+    items?: Array<{ name: string; quantity: number }>;
+  } | null>(null);
 
   useEffect(() => {
     if (!permission?.granted) {
@@ -94,7 +99,8 @@ export default function ScannerScreen() {
       setResult({
         type: 'success',
         message: 'Order fulfilled!',
-        name: response.data.order.userId,
+        name: response.data.order.userId?.name || response.data.order.userId,
+        items: response.data.order.items,
       });
     } catch (error: any) {
       setResult({
@@ -106,7 +112,7 @@ export default function ScannerScreen() {
     setTimeout(() => {
       setResult(null);
       setScanning(true);
-    }, 3000);
+    }, result?.type === 'success' ? 5000 : 3000);
   };
 
   if (!permission?.granted) {
@@ -138,6 +144,16 @@ export default function ScannerScreen() {
         <View style={[styles.resultOverlay, result.type === 'success' ? styles.success : styles.error]}>
           <Text style={styles.resultText}>{result.message}</Text>
           {result.name && <Text style={styles.resultName}>{result.name}</Text>}
+          
+          {result.items && (
+            <View style={styles.itemsList}>
+              {result.items.map((item, idx) => (
+                <Text key={idx} style={styles.itemRow}>
+                  • {item.name} x {item.quantity}
+                </Text>
+              ))}
+            </View>
+          )}
         </View>
       )}
 
@@ -202,8 +218,21 @@ const styles = StyleSheet.create({
   },
   resultName: {
     color: '#ffffff',
-    fontSize: 18,
-    marginTop: 8,
+    fontSize: 20,
+    marginTop: 4,
+    fontWeight: '600',
+  },
+  itemsList: {
+    marginTop: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    padding: 16,
+    borderRadius: 12,
+    minWidth: '70%',
+  },
+  itemRow: {
+    color: '#ffffff',
+    fontSize: 16,
+    marginBottom: 4,
   },
   permissionText: {
     color: '#ffffff',

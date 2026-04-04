@@ -2,6 +2,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { Order, User } from '../models/index.js';
+import { io } from '../server.js';
+import { serializeOrder } from '../utils/order.utils.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -113,6 +115,47 @@ router.get(
       );
     } catch {
       res.status(500).json({ error: 'Failed to fetch orders' });
+    }
+  },
+);
+
+router.patch(
+  '/orders/:id/status',
+  requireAuth,
+  requireRoles(['staff', 'manager', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { status } = req.body as { status?: string };
+      const allowedStatuses = ['preparing', 'ready'];
+
+      if (!status || !allowedStatuses.includes(status)) {
+        return res.status(400).json({ error: 'Invalid status. Allowed: preparing, ready' });
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'Invalid order ID' });
+      }
+
+      const order = await Order.findById(req.params.id);
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      order.status = status as typeof order.status;
+      await order.save();
+
+      // Notify the student who placed the order
+      io.to(String(order.userId)).emit('order:updated', {
+        orderId: String(order._id),
+        status,
+      });
+
+      // Notify all staff members
+      io.to('staff').emit('order:update', { order: serializeOrder(order) });
+
+      res.json({ success: true, order: serializeOrder(order) });
+    } catch {
+      res.status(500).json({ error: 'Failed to update order status' });
     }
   },
 );

@@ -1,15 +1,12 @@
+import './config/env.js';
 import { createServer } from 'http';
 import express from 'express';
 import { Server as SocketIOServer } from 'socket.io';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import path from 'path';
 import app from './app.js';
-import dotenv from 'dotenv';
 import { User, MenuItem, Order } from './models/index.js';
-
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/dsce-canteen';

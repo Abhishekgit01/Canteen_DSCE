@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
+const supportedCollegeValues = ['DSCE', 'NIE', 'DSATM'] as const;
+
 // User Schema
 const userSchema = new mongoose.Schema({
   usn: {
@@ -28,6 +30,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
     select: false,
+  },
+  college: {
+    type: String,
+    enum: supportedCollegeValues,
+    trim: true,
   },
   role: {
     type: String,
@@ -69,6 +76,11 @@ const otpSchema = new mongoose.Schema({
     type: String,
     required: true,
     lowercase: true,
+  },
+  purpose: {
+    type: String,
+    enum: ['signup', 'password_reset'],
+    default: 'signup',
   },
   code: {
     type: String,
@@ -264,6 +276,11 @@ const orderSchema = new mongoose.Schema({
   webhookVerified: {
     type: Boolean,
     default: false,
+  },
+  college: {
+    type: String,
+    enum: supportedCollegeValues,
+    trim: true,
   },
   createdAt: {
     type: Date,

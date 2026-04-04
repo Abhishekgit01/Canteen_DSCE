@@ -1,34 +1,51 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
+  View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { API_CONFIG_ERROR, authApi } from '../api';
+import type { College, RootStackScreenProps } from '../types';
 import { useAuthStore } from '../stores/authStore';
-import { RootStackScreenProps } from '../types';
 import { palette, shadows } from '../theme';
 
-export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>) {
+const campusOptions: Array<{
+  id: College;
+  label: string;
+  helper: string;
+}> = [
+  {
+    id: 'DSCE',
+    label: 'DSCE',
+    helper: 'Roster lookup available',
+  },
+  {
+    id: 'NIE',
+    label: 'NIE',
+    helper: 'Manual signup for now',
+  },
+];
+
+export default function AuthScreen({ navigation, route }: RootStackScreenProps<'Auth'>) {
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const usnPattern = /^[1-9][A-Z]{2}\d{2}[A-Z]{2}\d{3}$/;
-  const [isLogin, setIsLogin] = useState(true);
+  const [isLogin, setIsLogin] = useState(route.params?.initialMode !== 'signup');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
-  // Login fields
-  const [loginEmail, setLoginEmail] = useState('');
+  const [selectedCollege, setSelectedCollege] = useState<College>(route.params?.selectedCollege ?? 'DSCE');
+
+  const [loginEmail, setLoginEmail] = useState(route.params?.prefilledEmail ?? '');
   const [loginPassword, setLoginPassword] = useState('');
-  
-  // Signup fields
+
   const [usn, setUsn] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(route.params?.prefilledEmail ?? '');
   const [password, setPassword] = useState('');
   const [studentName, setStudentName] = useState('');
   const [manualName, setManualName] = useState('');
@@ -39,9 +56,32 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
   const normalizedSignupUsn = useMemo(() => usn.trim().toUpperCase().replace(/\s+/g, ''), [usn]);
 
   useEffect(() => {
+    if (route.params?.selectedCollege) {
+      setSelectedCollege(route.params.selectedCollege);
+    }
+  }, [route.params?.selectedCollege]);
+
+  useEffect(() => {
+    if (route.params?.initialMode) {
+      setIsLogin(route.params.initialMode === 'login');
+    }
+  }, [route.params?.initialMode]);
+
+  useEffect(() => {
+    if (route.params?.prefilledEmail) {
+      setLoginEmail(route.params.prefilledEmail);
+      setEmail(route.params.prefilledEmail);
+    }
+  }, [route.params?.prefilledEmail]);
+
+  useEffect(() => {
     setStudentName('');
-    setManualName('');
     setUsnLookupError('');
+
+    if (selectedCollege !== 'DSCE') {
+      setIsLookingUpUsn(false);
+      return;
+    }
 
     if (!usnPattern.test(normalizedSignupUsn)) {
       setIsLookingUpUsn(false);
@@ -51,7 +91,8 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
     let cancelled = false;
     setIsLookingUpUsn(true);
 
-    authApi.lookupStudent(normalizedSignupUsn)
+    authApi
+      .lookupStudent(normalizedSignupUsn)
       .then((response) => {
         if (!cancelled) {
           setStudentName(response.data.name);
@@ -61,7 +102,7 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
         if (!cancelled) {
           const lookupError =
             err.response?.status === 404
-              ? err.response?.data?.error || 'USN not found in the imported roster'
+              ? err.response?.data?.error || 'USN not found in the DSCE roster'
               : 'Could not reach the server. Check that the backend is running and reachable.';
           setUsnLookupError(lookupError);
         }
@@ -75,7 +116,7 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
     return () => {
       cancelled = true;
     };
-  }, [normalizedSignupUsn]);
+  }, [normalizedSignupUsn, selectedCollege]);
 
   const handleLogin = async () => {
     const normalizedEmail = loginEmail.trim().toLowerCase();
@@ -84,8 +125,10 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
       setError('Please fill all fields');
       return;
     }
+
     setLoading(true);
     setError('');
+
     try {
       const response = await authApi.login({ email: normalizedEmail, password: loginPassword });
       const { user, token } = response.data;
@@ -100,29 +143,37 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
 
   const handleSignup = async () => {
     const normalizedEmail = email.trim().toLowerCase();
+    const resolvedName = studentName || manualName.trim();
 
     if (!normalizedSignupUsn || !normalizedEmail || !password) {
       setError('Please fill all fields');
       return;
     }
+
     if (!emailPattern.test(normalizedEmail)) {
       setError('Please enter a valid email address');
       return;
     }
-    if (!studentName) {
-      if (!manualName.trim()) {
-        setError(usnLookupError || 'USN not found in roster');
-        return;
-      }
+
+    if (!resolvedName) {
+      setError(
+        selectedCollege === 'DSCE'
+          ? usnLookupError || 'Enter your full name if your USN is not in the DSCE roster'
+          : 'Please enter your full name',
+      );
+      return;
     }
+
     setLoading(true);
     setError('');
+
     try {
       const response = await authApi.signup({
         usn: normalizedSignupUsn,
         email: normalizedEmail,
         password,
-        name: studentName ? undefined : manualName.trim(),
+        name: resolvedName,
+        college: selectedCollege,
       });
 
       if (response.data.verificationRequired === false) {
@@ -132,7 +183,10 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
         return;
       }
 
-      navigation.navigate('Otp', { email: normalizedEmail });
+      navigation.navigate('Otp', {
+        email: normalizedEmail,
+        purpose: 'signup',
+      });
     } catch (err: any) {
       setError(err.response?.data?.error || err.userMessage || API_CONFIG_ERROR || 'Signup failed');
     } finally {
@@ -146,10 +200,46 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
       style={styles.container}
     >
       <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.logoWrap}>
-          <Text style={styles.logo}>DSCE</Text>
-          <Text style={styles.subtitle}>Canteen App</Text>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.heroCard}>
+          <TouchableOpacity
+            activeOpacity={0.75}
+            style={styles.backButton}
+            onPress={() => navigation.navigate('Welcome')}
+          >
+            <MaterialCommunityIcons name="arrow-left" size={20} color={palette.ink} />
+          </TouchableOpacity>
+
+          <Text style={styles.heroEyebrow}>Ybyte Access</Text>
+          <Text style={styles.heroTitle}>Welcome to the canteen lane.</Text>
+          <Text style={styles.heroSubtitle}>
+            Sign in for live orders or create a fresh account with campus-aware signup and OTP verification.
+          </Text>
+        </View>
+
+        <View style={styles.campusCard}>
+          <Text style={styles.sectionLabel}>Selected campus</Text>
+          <View style={styles.campusRow}>
+            {campusOptions.map((option) => {
+              const isSelected = option.id === selectedCollege;
+
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  activeOpacity={0.88}
+                  style={[styles.campusChip, isSelected && styles.campusChipActive]}
+                  onPress={() => setSelectedCollege(option.id)}
+                >
+                  <Text style={[styles.campusChipLabel, isSelected && styles.campusChipLabelActive]}>
+                    {option.label}
+                  </Text>
+                  <Text style={[styles.campusChipHelper, isSelected && styles.campusChipHelperActive]}>
+                    {option.helper}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         <View style={styles.tabContainer}>
@@ -170,7 +260,8 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {isLogin ? (
-          <View style={styles.form}>
+          <View style={styles.formCard}>
+            <Text style={styles.formTitle}>Login to your account</Text>
             <TextInput
               style={styles.input}
               placeholder="Email"
@@ -189,6 +280,17 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
               secureTextEntry
             />
             <TouchableOpacity
+              activeOpacity={0.8}
+              style={styles.inlineLinkWrap}
+              onPress={() =>
+                navigation.navigate('ForgotPassword', {
+                  prefilledEmail: loginEmail.trim().toLowerCase(),
+                })
+              }
+            >
+              <Text style={styles.inlineLink}>Forgot password?</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[styles.button, loading && styles.buttonDisabled]}
               onPress={handleLogin}
               disabled={loading}
@@ -197,7 +299,8 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={styles.form}>
+          <View style={styles.formCard}>
+            <Text style={styles.formTitle}>Create your {selectedCollege} account</Text>
             <TextInput
               style={styles.input}
               placeholder="USN"
@@ -206,16 +309,24 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
               onChangeText={(value) => setUsn(value.toUpperCase())}
               autoCapitalize="characters"
             />
+
             <View style={styles.lookupCard}>
-              <Text style={styles.lookupLabel}>Name from DSCE records</Text>
-              <Text style={styles.lookupValue}>
-                {isLookingUpUsn
-                  ? 'Looking up your name...'
-                  : studentName || 'If your USN is missing here, enter your name below'}
+              <Text style={styles.lookupLabel}>
+                {selectedCollege === 'DSCE' ? 'DSCE records' : 'Manual verification'}
               </Text>
-              {usnLookupError ? <Text style={styles.lookupError}>{usnLookupError}</Text> : null}
+              <Text style={styles.lookupValue}>
+                {selectedCollege === 'DSCE'
+                  ? isLookingUpUsn
+                    ? 'Looking up your name...'
+                    : studentName || 'If your USN is not found, type your name below.'
+                  : 'NIE signup currently uses manual name entry, then OTP verification on email.'}
+              </Text>
+              {usnLookupError && selectedCollege === 'DSCE' ? (
+                <Text style={styles.lookupError}>{usnLookupError}</Text>
+              ) : null}
             </View>
-            {!studentName && !isLookingUpUsn ? (
+
+            {selectedCollege !== 'DSCE' || !studentName || !isLookingUpUsn ? (
               <TextInput
                 style={styles.input}
                 placeholder="Full Name"
@@ -224,6 +335,7 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
                 onChangeText={setManualName}
               />
             ) : null}
+
             <TextInput
               style={styles.input}
               placeholder="Email"
@@ -246,7 +358,7 @@ export default function AuthScreen({ navigation }: RootStackScreenProps<'Auth'>)
               onPress={handleSignup}
               disabled={loading}
             >
-              <Text style={styles.buttonText}>{loading ? 'Please wait...' : 'Sign Up'}</Text>
+              <Text style={styles.buttonText}>{loading ? 'Please wait...' : 'Continue to OTP'}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -261,67 +373,143 @@ const styles = StyleSheet.create({
     backgroundColor: palette.background,
   },
   scroll: {
-    padding: 24,
-    paddingTop: 60,
+    padding: 20,
+    paddingTop: 48,
+    paddingBottom: 28,
+    gap: 18,
   },
-  logoWrap: {
+  heroCard: {
+    backgroundColor: palette.surface,
+    borderRadius: 28,
+    padding: 22,
+    ...shadows.card,
+  },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: palette.surfaceMuted,
     alignItems: 'center',
-    marginBottom: 32,
+    justifyContent: 'center',
+    marginBottom: 18,
   },
-  logo: {
-    fontSize: 38,
-    fontWeight: '900',
+  heroEyebrow: {
     color: palette.brand,
-    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
-  subtitle: {
-    fontSize: 18,
+  heroTitle: {
+    color: palette.ink,
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: '900',
+    marginTop: 10,
+  },
+  heroSubtitle: {
     color: palette.muted,
-    textAlign: 'center',
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 10,
+  },
+  campusCard: {
+    backgroundColor: palette.warningSoft,
+    borderRadius: 24,
+    padding: 16,
+    gap: 12,
+  },
+  sectionLabel: {
+    color: '#9A6A35',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  campusRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  campusChip: {
+    flex: 1,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    gap: 4,
+  },
+  campusChipActive: {
+    backgroundColor: palette.brand,
+  },
+  campusChipLabel: {
+    color: palette.ink,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  campusChipLabelActive: {
+    color: palette.surface,
+  },
+  campusChipHelper: {
+    color: '#7A5B37',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  campusChipHelperActive: {
+    color: 'rgba(255,255,255,0.82)',
   },
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: palette.surface,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 4,
-    marginBottom: 24,
     ...shadows.card,
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 13,
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 14,
   },
   activeTab: {
     backgroundColor: palette.brand,
   },
   tabText: {
     color: palette.muted,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   activeTabText: {
     color: palette.surface,
   },
-  form: {
-    gap: 16,
+  formCard: {
+    backgroundColor: palette.surface,
+    borderRadius: 28,
+    padding: 20,
+    gap: 14,
+    ...shadows.card,
+  },
+  formTitle: {
+    color: palette.ink,
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 2,
   },
   lookupCard: {
-    backgroundColor: palette.surface,
+    backgroundColor: palette.surfaceRaised,
     borderRadius: 18,
     padding: 16,
     gap: 6,
-    ...shadows.card,
   },
   lookupLabel: {
     color: palette.muted,
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
+    fontWeight: '700',
   },
   lookupValue: {
     color: palette.ink,
-    fontSize: 16,
+    fontSize: 15,
+    lineHeight: 21,
     fontWeight: '700',
   },
   lookupError: {
@@ -329,19 +517,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   input: {
-    backgroundColor: palette.surface,
+    backgroundColor: palette.surfaceMuted,
     borderRadius: 18,
     padding: 16,
     color: palette.ink,
     fontSize: 16,
-    ...shadows.card,
+  },
+  inlineLinkWrap: {
+    alignSelf: 'flex-end',
+    marginTop: -2,
+  },
+  inlineLink: {
+    color: palette.brand,
+    fontSize: 13,
+    fontWeight: '800',
   },
   button: {
     backgroundColor: palette.accent,
     borderRadius: 18,
     padding: 16,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 6,
     ...shadows.floating,
   },
   buttonDisabled: {
@@ -349,13 +545,13 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: palette.surface,
-    fontWeight: '800',
+    fontWeight: '900',
     fontSize: 16,
   },
   error: {
     color: palette.danger,
     textAlign: 'center',
-    marginBottom: 16,
     fontWeight: '700',
+    paddingHorizontal: 10,
   },
 });
