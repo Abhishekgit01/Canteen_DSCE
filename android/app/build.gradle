@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.canteen.app"
+    namespace = "com.dscecanteen.canteen"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.canteen.app"
+        applicationId "com.dscecanteen.canteen"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">CanteenApp</string>
     <string name="title_activity_main">CanteenApp</string>
-    <string name="package_name">com.canteen.app</string>
-    <string name="custom_url_scheme">com.canteen.app</string>
+    <string name="package_name">com.dscecanteen.canteen</string>
+    <string name="custom_url_scheme">com.dscecanteen.canteen</string>
 </resources>

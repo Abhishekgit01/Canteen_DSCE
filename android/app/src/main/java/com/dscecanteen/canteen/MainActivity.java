@@ -1,4 +1,4 @@
-package com.canteen.app;
+package com.dscecanteen.canteen;
 
 import com.getcapacitor.BridgeActivity;
 
