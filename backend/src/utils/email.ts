@@ -1,10 +1,19 @@
 import nodemailer from 'nodemailer';
 
-const getTransporter = () =>
-  nodemailer.createTransport({
+let transporter: nodemailer.Transporter | null = null;
+
+const getTransporter = () => {
+  if (transporter) {
+    return transporter;
+  }
+
+  transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: Number(process.env.EMAIL_PORT || 587),
     secure: Number(process.env.EMAIL_PORT || 587) === 465,
+    pool: true,
+    maxConnections: 1,
+    maxMessages: Infinity,
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
@@ -13,6 +22,9 @@ const getTransporter = () =>
     greetingTimeout: 8000,
     socketTimeout: 10000,
   });
+
+  return transporter;
+};
 
 export const isEmailConfigured = (): boolean => Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 

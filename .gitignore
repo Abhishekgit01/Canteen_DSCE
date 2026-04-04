@@ -1,6 +1,11 @@
 # Sensitive project files
 .orchids/
 .canteen-progress.md
+canteen-context.md
+implement.md
+Ybyte.png
+Ybyte_squared.png
+canteen-payments-worker/
 
 # Dependencies
 node_modules/

@@ -16,23 +16,6 @@ import type { College, RootStackScreenProps } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { palette, shadows } from '../theme';
 
-const campusOptions: Array<{
-  id: College;
-  label: string;
-  helper: string;
-}> = [
-  {
-    id: 'DSCE',
-    label: 'DSCE',
-    helper: 'Roster lookup available',
-  },
-  {
-    id: 'NIE',
-    label: 'NIE',
-    helper: 'Manual signup for now',
-  },
-];
-
 export default function AuthScreen({ navigation, route }: RootStackScreenProps<'Auth'>) {
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const usnPattern = /^[1-9][A-Z]{2}\d{2}[A-Z]{2}\d{3}$/;
@@ -210,36 +193,11 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
             <MaterialCommunityIcons name="arrow-left" size={20} color={palette.ink} />
           </TouchableOpacity>
 
-          <Text style={styles.heroEyebrow}>Ybyte Access</Text>
+          <Text style={styles.heroEyebrow}>{selectedCollege} Access</Text>
           <Text style={styles.heroTitle}>Welcome to the canteen lane.</Text>
           <Text style={styles.heroSubtitle}>
             Sign in for live orders or create a fresh account with campus-aware signup and OTP verification.
           </Text>
-        </View>
-
-        <View style={styles.campusCard}>
-          <Text style={styles.sectionLabel}>Selected campus</Text>
-          <View style={styles.campusRow}>
-            {campusOptions.map((option) => {
-              const isSelected = option.id === selectedCollege;
-
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  activeOpacity={0.88}
-                  style={[styles.campusChip, isSelected && styles.campusChipActive]}
-                  onPress={() => setSelectedCollege(option.id)}
-                >
-                  <Text style={[styles.campusChipLabel, isSelected && styles.campusChipLabelActive]}>
-                    {option.label}
-                  </Text>
-                  <Text style={[styles.campusChipHelper, isSelected && styles.campusChipHelperActive]}>
-                    {option.helper}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
         </View>
 
         <View style={styles.tabContainer}>
@@ -412,50 +370,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     marginTop: 10,
-  },
-  campusCard: {
-    backgroundColor: palette.warningSoft,
-    borderRadius: 24,
-    padding: 16,
-    gap: 12,
-  },
-  sectionLabel: {
-    color: '#9A6A35',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  campusRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  campusChip: {
-    flex: 1,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    gap: 4,
-  },
-  campusChipActive: {
-    backgroundColor: palette.brand,
-  },
-  campusChipLabel: {
-    color: palette.ink,
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  campusChipLabelActive: {
-    color: palette.surface,
-  },
-  campusChipHelper: {
-    color: '#7A5B37',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  campusChipHelperActive: {
-    color: 'rgba(255,255,255,0.82)',
   },
   tabContainer: {
     flexDirection: 'row',
