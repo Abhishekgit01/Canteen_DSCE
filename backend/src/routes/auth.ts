@@ -1,8 +1,11 @@
 import { Router, Request, Response } from 'express';
+import { createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import { User, OTP } from '../models/index.js';
-import { generateOTP, isEmailConfigured, sendOTPEmail } from '../utils/email.js';
+import { generateOTP } from '../utils/email.js';
+import { isEmailConfigured, sendOTPEmail } from '../services/email.service.js';
 import { lookupStudentByUsn, normalizeUsn } from '../services/student-registry.service.js';
 
 const router = Router();
@@ -14,6 +17,8 @@ type OtpPurpose = 'signup' | 'password_reset';
 type SupportedCollege = 'DSCE' | 'NIE';
 
 const supportedColleges: SupportedCollege[] = ['DSCE', 'NIE'];
+const INTERNAL_GOOGLE_ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+let googleClient: OAuth2Client | null = null;
 
 const getAuthVerificationMode = (): AuthVerificationMode => {
   const value = String(process.env.AUTH_VERIFICATION_MODE || 'email')
@@ -46,23 +51,76 @@ const normalizeCollege = (value: unknown): SupportedCollege | null => {
 const getOtpServiceErrorMessage = () =>
   isEmailConfigured()
     ? 'OTP delivery is taking too long. Please try again in a moment.'
-    : 'OTP email service is not configured on the backend. Add EMAIL_USER and EMAIL_PASS in Render.';
+    : 'OTP email service is not configured on the backend. Add RESEND_API_KEY to backend env.';
 
-const createAndSendOtp = async (email: string, purpose: OtpPurpose) => {
+const getGoogleClientId = (): string => {
+  return String(process.env.GOOGLE_CLIENT_ID || '').trim();
+};
+
+const getGoogleClient = (): OAuth2Client | null => {
+  const clientId = getGoogleClientId();
+
+  if (!clientId) {
+    return null;
+  }
+
+  if (!googleClient) {
+    googleClient = new OAuth2Client(clientId);
+  }
+
+  return googleClient;
+};
+
+const getLetterPair = (hash: string, start: number): string => {
+  const first = INTERNAL_GOOGLE_ID_ALPHABET[parseInt(hash.slice(start, start + 2), 16) % 26];
+  const second = INTERNAL_GOOGLE_ID_ALPHABET[parseInt(hash.slice(start + 2, start + 4), 16) % 26];
+
+  return `${first}${second}`;
+};
+
+const createInternalGoogleUsn = async (googleId: string): Promise<string> => {
+  const year = String(new Date().getFullYear() % 100).padStart(2, '0');
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const hash = createHash('sha256')
+      .update(`${googleId}:${attempt}`)
+      .digest('hex')
+      .toUpperCase();
+    const prefix = String((parseInt(hash.slice(0, 2), 16) % 9) + 1);
+    const middle = getLetterPair(hash, 2);
+    const branch = getLetterPair(hash, 8);
+    const suffix = String(parseInt(hash.slice(14, 20), 16) % 1000).padStart(3, '0');
+    const candidate = `${prefix}${middle}${year}${branch}${suffix}`;
+    const exists = await User.exists({ usn: candidate });
+
+    if (!exists) {
+      return candidate;
+    }
+  }
+
+  throw new Error('Could not allocate an internal Google user ID');
+};
+
+const queueOtpEmail = (email: string, name: string, otp: string) => {
+  sendOTPEmail(email, name, otp).catch((error) => {
+    console.error(`Email send failed for ${email}:`, error instanceof Error ? error.message : error);
+  });
+};
+
+const createAndQueueOtp = async (email: string, name: string, purpose: OtpPurpose) => {
+  if (!isEmailConfigured()) {
+    throw new Error('OTP email service is not configured');
+  }
+
   const otp = generateOTP();
-  const record = await OTP.create({
+  await OTP.create({
     email,
     purpose,
     code: otp,
     expiresAt: new Date(Date.now() + 10 * 60 * 1000),
   });
 
-  try {
-    await sendOTPEmail(email, otp);
-  } catch (error) {
-    await OTP.deleteOne({ _id: record._id });
-    throw error;
-  }
+  queueOtpEmail(email, name, otp);
 };
 
 const createAuthResponse = (user: {
@@ -73,20 +131,63 @@ const createAuthResponse = (user: {
   college?: string | null;
   role: string;
   isVerified: boolean;
+  googleId?: string | null;
+  picture?: string | null;
 }) => {
-  const token = jwt.sign({ id: user._id, usn: user.usn, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign(
+    {
+      id: user._id,
+      usn: user.usn,
+      role: user.role,
+      college: user.college,
+      email: user.email,
+    },
+    JWT_SECRET,
+    {
+      expiresIn: '7d',
+      issuer: 'canteen-app',
+      audience: 'canteen-users',
+    },
+  );
 
   return {
     user: {
       id: String(user._id),
-      usn: user.usn,
+      usn: user.googleId ? null : user.usn,
       email: user.email,
       name: user.name,
       college: user.college,
       role: user.role,
       isVerified: user.isVerified,
+      picture: user.picture,
     },
     token,
+  };
+};
+
+const verifyGoogleIdToken = async (idToken: string) => {
+  const clientId = getGoogleClientId();
+  const client = getGoogleClient();
+
+  if (!clientId || !client) {
+    throw new Error('GOOGLE_CLIENT_ID is not configured');
+  }
+
+  const ticket = await client.verifyIdToken({
+    idToken,
+    audience: clientId,
+  });
+  const payload = ticket.getPayload();
+
+  if (!payload?.email || !payload.sub) {
+    throw new Error('Invalid Google token');
+  }
+
+  return {
+    googleId: payload.sub,
+    email: String(payload.email).trim().toLowerCase(),
+    name: String(payload.name || payload.email).trim(),
+    picture: payload.picture ? String(payload.picture) : null,
   };
 };
 
@@ -120,6 +221,12 @@ router.post('/signup', async (req: Request, res: Response) => {
           college === 'DSCE'
             ? 'Enter your full name if your USN is missing from the DSCE roster'
             : 'Please enter your full name',
+      });
+    }
+
+    if (shouldUseOtpVerification() && !isEmailConfigured()) {
+      return res.status(503).json({
+        error: getOtpServiceErrorMessage(),
       });
     }
 
@@ -175,7 +282,7 @@ router.post('/signup', async (req: Request, res: Response) => {
     await OTP.deleteMany({ email: normalizedEmail, purpose: 'signup' });
 
     try {
-      await createAndSendOtp(normalizedEmail, 'signup');
+      await createAndQueueOtp(normalizedEmail, resolvedName, 'signup');
     } catch (error) {
       console.error('OTP delivery error:', error);
 
@@ -249,6 +356,10 @@ router.post('/resend-otp', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'OTP verification is currently disabled on this backend' });
     }
 
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ error: getOtpServiceErrorMessage() });
+    }
+
     const normalizedEmail = String(req.body.email || '').trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash');
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -257,7 +368,7 @@ router.post('/resend-otp', async (req: Request, res: Response) => {
     await OTP.deleteMany({ email: normalizedEmail, purpose: 'signup' });
 
     try {
-      await createAndSendOtp(normalizedEmail, 'signup');
+      await createAndQueueOtp(normalizedEmail, user.name, 'signup');
     } catch (error) {
       console.error('OTP resend error:', error);
       return res.status(503).json({
@@ -277,12 +388,16 @@ router.post('/forgot-password/request', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Password reset OTP is currently disabled on this backend' });
     }
 
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ error: getOtpServiceErrorMessage() });
+    }
+
     const normalizedEmail = String(req.body.email || '').trim().toLowerCase();
     if (!EMAIL_PATTERN.test(normalizedEmail)) {
       return res.status(400).json({ error: 'Please enter a valid email address' });
     }
 
-    const user = await User.findOne({ email: normalizedEmail }).select('_id isVerified');
+    const user = await User.findOne({ email: normalizedEmail }).select('_id isVerified name');
     if (!user) {
       return res.status(404).json({ error: 'No account found with that email address' });
     }
@@ -294,7 +409,7 @@ router.post('/forgot-password/request', async (req: Request, res: Response) => {
     await OTP.deleteMany({ email: normalizedEmail, purpose: 'password_reset' });
 
     try {
-      await createAndSendOtp(normalizedEmail, 'password_reset');
+      await createAndQueueOtp(normalizedEmail, user.name, 'password_reset');
     } catch (error) {
       console.error('Password reset OTP error:', error);
       return res.status(503).json({ error: getOtpServiceErrorMessage() });
@@ -354,13 +469,112 @@ router.post('/forgot-password/reset', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/google', async (req: Request, res: Response) => {
+  try {
+    const clientId = getGoogleClientId();
+    if (!clientId) {
+      return res.status(503).json({ error: 'Google authentication is not configured on this backend' });
+    }
+
+    const idToken = String(req.body?.idToken || '').trim();
+    if (!idToken) {
+      return res.status(400).json({ error: 'ID token required' });
+    }
+
+    const profile = await verifyGoogleIdToken(idToken);
+    let user = await User.findOne({ email: profile.email }).select('+passwordHash');
+
+    if (user) {
+      let didUpdateUser = false;
+
+      if (!user.googleId) {
+        user.googleId = profile.googleId;
+        didUpdateUser = true;
+      }
+
+      if (!user.picture && profile.picture) {
+        user.picture = profile.picture;
+        didUpdateUser = true;
+      }
+
+      if (!user.isVerified) {
+        user.isVerified = true;
+        didUpdateUser = true;
+      }
+
+      if (didUpdateUser) {
+        await user.save();
+      }
+
+      return res.json(createAuthResponse(user));
+    }
+
+    return res.status(206).json({
+      requiresCollege: true,
+      email: profile.email,
+      name: profile.name,
+      picture: profile.picture,
+      message: 'Please select your college to complete signup',
+    });
+  } catch (error) {
+    console.error('Google auth error:', error);
+    return res.status(401).json({ error: 'Google authentication failed' });
+  }
+});
+
+router.post('/google/complete', async (req: Request, res: Response) => {
+  try {
+    const clientId = getGoogleClientId();
+    if (!clientId) {
+      return res.status(503).json({ error: 'Google authentication is not configured on this backend' });
+    }
+
+    const idToken = String(req.body?.idToken || '').trim();
+    const college = normalizeCollege(req.body?.college);
+
+    if (!idToken) {
+      return res.status(400).json({ error: 'ID token required' });
+    }
+
+    if (!college) {
+      return res.status(400).json({ error: 'College is required' });
+    }
+
+    const profile = await verifyGoogleIdToken(idToken);
+    const existing = await User.findOne({ email: profile.email }).select('+passwordHash');
+
+    if (existing) {
+      return res.status(409).json({ error: 'Account already exists' });
+    }
+
+    const internalUsn = await createInternalGoogleUsn(profile.googleId);
+    const user = await User.create({
+      name: profile.name,
+      email: profile.email,
+      googleId: profile.googleId,
+      picture: profile.picture,
+      college,
+      role: 'student',
+      isVerified: true,
+      usn: internalUsn,
+    });
+
+    return res.json(createAuthResponse(user));
+  } catch (error) {
+    console.error('Google complete error:', error);
+    return res.status(500).json({ error: 'Signup failed' });
+  }
+});
+
 // Login
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash');
-    if (!user || !user.isVerified) return res.status(401).json({ error: 'Invalid email or password' });
+    if (!user || !user.isVerified || !user.passwordHash) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
 
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) return res.status(401).json({ error: 'Invalid email or password' });
@@ -385,12 +599,13 @@ router.get('/me', async (req: Request, res: Response) => {
 
     res.json({
       id: user._id,
-      usn: user.usn,
+      usn: user.googleId ? null : user.usn,
       email: user.email,
       name: user.name,
       college: user.college,
       role: user.role,
       isVerified: user.isVerified,
+      picture: user.picture,
     });
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });

@@ -26,9 +26,19 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     trim: true,
   },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+  },
+  picture: {
+    type: String,
+    trim: true,
+  },
   passwordHash: {
     type: String,
-    required: true,
+    required: false,
     select: false,
   },
   college: {

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -11,16 +12,21 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 import { API_CONFIG_ERROR, authApi } from '../api';
 import type { College, RootStackScreenProps } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { palette, shadows } from '../theme';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthScreen({ navigation, route }: RootStackScreenProps<'Auth'>) {
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const usnPattern = /^[1-9][A-Z]{2}\d{2}[A-Z]{2}\d{3}$/;
   const [isLogin, setIsLogin] = useState(route.params?.initialMode !== 'signup');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedCollege, setSelectedCollege] = useState<College>(route.params?.selectedCollege ?? 'DSCE');
 
@@ -37,6 +43,13 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
 
   const { setAuth } = useAuthStore();
   const normalizedSignupUsn = useMemo(() => usn.trim().toUpperCase().replace(/\s+/g, ''), [usn]);
+  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    selectAccount: true,
+  });
 
   useEffect(() => {
     if (route.params?.selectedCollege) {
@@ -56,6 +69,32 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
       setEmail(route.params.prefilledEmail);
     }
   }, [route.params?.prefilledEmail]);
+
+  useEffect(() => {
+    if (!googleResponse) {
+      return;
+    }
+
+    if (googleResponse.type !== 'success') {
+      if (googleResponse.type === 'error') {
+        setError('Google sign in failed. Try again.');
+      }
+
+      setGoogleLoading(false);
+      return;
+    }
+
+    const responseWithAuth = googleResponse as any;
+    const idToken = responseWithAuth.authentication?.idToken || responseWithAuth.params?.id_token;
+
+    if (!idToken) {
+      setError('Google sign in did not return an ID token.');
+      setGoogleLoading(false);
+      return;
+    }
+
+    void handleGoogleResponse(idToken);
+  }, [googleResponse]);
 
   useEffect(() => {
     setStudentName('');
@@ -121,6 +160,33 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
       setError(err.response?.data?.error || err.userMessage || API_CONFIG_ERROR || 'Login failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleResponse = async (idToken: string) => {
+    setError('');
+
+    try {
+      const response = await authApi.googleLogin(idToken);
+
+      if ('requiresCollege' in response.data && response.data.requiresCollege) {
+        navigation.navigate('GoogleCollegeSelect', {
+          idToken,
+          email: response.data.email,
+          name: response.data.name,
+          picture: response.data.picture,
+          selectedCollege,
+        });
+        return;
+      }
+
+      const authData = response.data as { user: Parameters<typeof setAuth>[0]; token: string };
+      await setAuth(authData.user, authData.token);
+      navigation.replace('Main');
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.userMessage || 'Google sign in failed. Try again.');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -196,7 +262,7 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
           <Text style={styles.heroEyebrow}>{selectedCollege} Access</Text>
           <Text style={styles.heroTitle}>Welcome to the canteen lane.</Text>
           <Text style={styles.heroSubtitle}>
-            Sign in for live orders or create a fresh account with campus-aware signup and OTP verification.
+            Sign in for live orders or create a fresh account with campus-aware signup, OTP verification, and one-tap Google access.
           </Text>
         </View>
 
@@ -254,6 +320,31 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
               disabled={loading}
             >
               <Text style={styles.buttonText}>{loading ? 'Please wait...' : 'Login'}</Text>
+            </TouchableOpacity>
+
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.92}
+              style={[styles.googleButton, (!googleRequest || googleLoading) && styles.buttonDisabled]}
+              onPress={() => {
+                setError('');
+                setGoogleLoading(true);
+                void promptGoogleAsync();
+              }}
+              disabled={!googleRequest || googleLoading}
+            >
+              <Image
+                source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+                style={styles.googleLogo}
+              />
+              <Text style={styles.googleButtonText}>
+                {googleLoading ? 'Opening Google...' : 'Continue with Google'}
+              </Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -446,6 +537,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: palette.line,
+  },
+  dividerText: {
+    color: palette.subtle,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
   button: {
     backgroundColor: palette.accent,
     borderRadius: 18,
@@ -461,6 +569,28 @@ const styles = StyleSheet.create({
     color: palette.surface,
     fontWeight: '900',
     fontSize: 16,
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DADCE0',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    gap: 10,
+    ...shadows.card,
+  },
+  googleLogo: {
+    width: 20,
+    height: 20,
+  },
+  googleButtonText: {
+    color: '#3C4043',
+    fontSize: 16,
+    fontWeight: '600',
   },
   error: {
     color: palette.danger,

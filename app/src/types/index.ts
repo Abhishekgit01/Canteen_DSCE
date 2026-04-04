@@ -9,12 +9,13 @@ import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-n
 
 export interface User {
   id: string;
-  usn: string;
+  usn?: string | null;
   email: string;
   name: string;
   college?: College;
   role: 'student' | 'staff' | 'manager' | 'admin';
   isVerified: boolean;
+  picture?: string | null;
 }
 
 export type College = 'DSCE' | 'NIE';
@@ -119,6 +120,13 @@ export type RootStackParamList = {
     | undefined;
   Otp: { email: string; purpose: OtpPurpose };
   ForgotPassword: { prefilledEmail?: string } | undefined;
+  GoogleCollegeSelect: {
+    idToken: string;
+    email: string;
+    name: string;
+    picture?: string | null;
+    selectedCollege?: College;
+  };
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
   Search: undefined;
   ItemDetail: { item: MenuItem };

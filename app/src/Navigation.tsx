@@ -10,6 +10,7 @@ import WelcomeScreen from './screens/WelcomeScreen';
 import AuthScreen from './screens/AuthScreen';
 import OtpScreen from './screens/OtpScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
+import GoogleCollegeSelectScreen from './screens/GoogleCollegeSelectScreen';
 import HomeScreen from './screens/HomeScreen';
 import SearchScreen from './screens/SearchScreen';
 import ItemDetailScreen from './screens/ItemDetailScreen';
@@ -144,6 +145,7 @@ export default function Navigation() {
             <Stack.Screen name="Auth" component={AuthScreen} />
             <Stack.Screen name="Otp" component={OtpScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+            <Stack.Screen name="GoogleCollegeSelect" component={GoogleCollegeSelectScreen} />
           </>
         )}
       </Stack.Navigator>
