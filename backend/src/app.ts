@@ -12,6 +12,7 @@ import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
 import adminRoutes from './routes/admin.js';
+import rushHoursRoutes from './routes/rushHours.js';
 
 const app = express();
 
@@ -165,5 +166,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/rush-hours', rushHoursRoutes);
 
 export default app;

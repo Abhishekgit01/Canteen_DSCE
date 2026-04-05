@@ -42,14 +42,14 @@ export const authApi = {
 };
 
 export const menuApi = {
-  getMenu: () => api.get('/menu'),
+  getMenu: (college?: string) => api.get('/menu', { params: college ? { college } : {} }),
   createItem: (data: any) => api.post('/menu', data),
   updateItem: (id: string, data: any) => api.patch(`/menu/${id}`, data),
   deleteItem: (id: string) => api.delete(`/menu/${id}`),
 };
 
 export const ordersApi = {
-  getOrders: () => api.get('/admin/orders'),
+  getOrders: (college?: string) => api.get('/admin/orders', { params: college ? { college } : {} }),
   getOrderById: (orderId: string) => api.get(`/orders/${orderId}`),
   createOrder: (items: any[]) => api.post('/orders', { items }),
   updateOrderStatus: (orderId: string, status: string) =>
@@ -59,10 +59,20 @@ export const ordersApi = {
 };
 
 export const statsApi = {
-  getStats: () => api.get('/admin/stats'),
+  getStats: (college?: string) => api.get('/admin/stats', { params: college ? { college } : {} }),
 };
 
 export const usersApi = {
   getUsers: () => api.get('/admin/users'),
   updateRole: (id: string, role: string) => api.patch(`/admin/users/${id}/role`, { role }),
+};
+
+export const rushHoursApi = {
+  getRushHours: (college?: string) =>
+    api.get('/rush-hours/all', { params: college ? { college } : {} }),
+  getRushHourStatus: (college?: string) =>
+    api.get('/rush-hours', { params: college ? { college } : {} }),
+  createRushHour: (data: any) => api.post('/rush-hours', data),
+  updateRushHour: (id: string, data: any) => api.patch(`/rush-hours/${id}`, data),
+  deleteRushHour: (id: string) => api.delete(`/rush-hours/${id}`),
 };

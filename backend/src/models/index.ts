@@ -233,6 +233,12 @@ const orderSchema = new mongoose.Schema({
       type: String,
       enum: ['cold', 'normal', 'hot'],
     },
+    chefNote: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+      default: '',
+    },
   }],
   scheduledTime: {
     type: String,

@@ -40,6 +40,7 @@ export interface CartItem {
   quantity: number;
   tempPreference: string;
   scheduledTime: string;
+  chefNote: string;
 }
 
 export interface Order {
@@ -51,6 +52,7 @@ export interface Order {
     price?: number;
     quantity: number;
     tempPreference: string;
+    chefNote?: string;
   }[];
   scheduledTime: string;
   totalAmount: number;
@@ -64,6 +66,24 @@ export interface Order {
 }
 
 export type PaymentMode = 'mock' | 'upi_link' | 'razorpay';
+
+export interface RushHourRule {
+  _id: string;
+  college: College;
+  dayOfWeek: number[];
+  startTime: string;
+  endTime: string;
+  label: string;
+  surchargePercent: number;
+  isActive: boolean;
+  message: string;
+}
+
+export interface RushHourStatus {
+  isRushHour: boolean;
+  current: RushHourRule | null;
+  all: RushHourRule[];
+}
 
 type PaymentInitBase = {
   mode: PaymentMode;

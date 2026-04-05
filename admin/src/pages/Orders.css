@@ -5,6 +5,20 @@
   flex-wrap: wrap;
 }
 
+.orders-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.orders-college-filter {
+  width: auto;
+  min-width: 160px;
+}
+
 .filter-btn {
   padding: 8px 16px;
   background: var(--bg-card);
@@ -19,4 +33,50 @@
   background: var(--accent-primary);
   color: white;
   border-color: var(--accent-primary);
+}
+
+.order-items-cell {
+  min-width: 260px;
+}
+
+.order-item-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.order-item-line:last-child {
+  margin-bottom: 0;
+}
+
+.order-item-main {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.order-item-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.chef-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent-primary);
+  border-radius: 10px;
+  background: rgba(249, 115, 22, 0.14);
+  color: #fed7aa;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.chef-note-icon {
+  color: var(--accent-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }

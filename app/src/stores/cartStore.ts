@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CartItem } from '../types';
-import { getMenuItemId, normalizeCartItem } from '../utils/menu';
+import { getMenuItemId, normalizeCartItem, sanitizeChefNote } from '../utils/menu';
 
 interface CartState {
   items: CartItem[];
   addItem: (item: CartItem) => Promise<void>;
   removeItem: (menuItemId: string) => Promise<void>;
   updateQuantity: (menuItemId: string, quantity: number) => Promise<void>;
+  updateChefNote: (menuItemId: string, chefNote: string) => Promise<void>;
   setScheduledTime: (scheduledTime: string) => Promise<void>;
   clearCart: () => Promise<void>;
   loadCart: () => Promise<void>;
@@ -49,6 +50,17 @@ export const useCartStore = create<CartState>((set, get) => ({
         getMenuItemId(entry.menuItem) === menuItemId ? { ...entry, quantity } : entry,
       )
       .filter((entry) => entry.quantity > 0);
+    await AsyncStorage.setItem('cart', JSON.stringify(newItems));
+    set({ items: newItems });
+  },
+  updateChefNote: async (menuItemId, chefNote) => {
+    const { items } = get();
+    const sanitizedNote = sanitizeChefNote(chefNote);
+    const newItems = items.map((entry) =>
+      getMenuItemId(entry.menuItem) === menuItemId
+        ? { ...entry, chefNote: sanitizedNote }
+        : entry,
+    );
     await AsyncStorage.setItem('cart', JSON.stringify(newItems));
     set({ items: newItems });
   },

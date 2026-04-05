@@ -37,6 +37,7 @@ type CreateOrderBody = {
     };
     quantity?: number | string;
     tempPreference?: 'cold' | 'normal' | 'hot' | string;
+    chefNote?: string;
   }>;
   scheduledTime?: string;
 };
@@ -138,6 +139,14 @@ function getRequestedTempPreference(value: unknown) {
   }
 
   return undefined;
+}
+
+function sanitizeChefNote(value: unknown) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.replace(/<[^>]*>/g, '').slice(0, 200).trim();
 }
 
 async function findOwnedOrder(orderId: string, userId: string) {
@@ -290,6 +299,7 @@ router.post(
           price: menuItem.price,
           quantity: requestedQuantity,
           tempPreference: requestedTempPreference,
+          chefNote: sanitizeChefNote(item.chefNote),
         });
       }
 

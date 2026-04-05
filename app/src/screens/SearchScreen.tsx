@@ -104,6 +104,7 @@ export default function SearchScreen() {
       quantity: nextQuantity,
       tempPreference: existingItem?.tempPreference || item.tempOptions[0] || 'normal',
       scheduledTime: existingItem?.scheduledTime || getDefaultPickupTime(new Date(), userCollege),
+      chefNote: existingItem?.chefNote || '',
     });
   };
 

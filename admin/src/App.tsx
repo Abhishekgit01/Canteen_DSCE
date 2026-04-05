@@ -4,6 +4,7 @@ import LoginPage from './pages/Login';
 import DashboardPage from './pages/Dashboard';
 import MenuPage from './pages/Menu';
 import OrdersPage from './pages/Orders';
+import RushHoursPage from './pages/RushHours';
 import UsersPage from './pages/Users';
 import Layout from './components/Layout';
 
@@ -33,6 +34,7 @@ function App() {
         <Route element={<Layout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/menu" element={<MenuPage />} />
+          <Route path="/rush-hours" element={<RushHoursPage />} />
         </Route>
       </Route>
       <Route element={<ProtectedRoute allowedRoles={['staff', 'manager', 'admin']} />}>

@@ -123,6 +123,9 @@ router.get(
             ? order.items.map((item: any) => ({
                 name: item.name,
                 quantity: item.quantity,
+                price: item.price,
+                tempPreference: item.tempPreference,
+                chefNote: item.chefNote,
               }))
             : [],
           totalAmount: order.totalAmount,

@@ -2,7 +2,16 @@ import axios, { type AxiosResponse } from 'axios';
 import { NativeModules, Platform } from 'react-native';
 import { DEFAULT_COLLEGE, normalizeCollege } from '../constants/colleges';
 import { useAuthStore } from '../stores/authStore';
-import type { College, MenuItem, Order, PaymentInitResponse, PaymentMode, User } from '../types';
+import type {
+  College,
+  MenuItem,
+  Order,
+  PaymentInitResponse,
+  PaymentMode,
+  RushHourRule,
+  RushHourStatus,
+  User,
+} from '../types';
 import { normalizeMenuItems } from '../utils/menu';
 
 const normalizeOrigin = (value?: string | null): string | null => {
@@ -55,6 +64,10 @@ const MENU_CACHE_TTL_MS = 2 * 60 * 1000;
 type MenuCacheEntry = {
   data: MenuItem[];
   cachedAt: number;
+};
+
+type RushHourApiRecord = Omit<RushHourRule, 'college'> & {
+  college?: string | null;
 };
 
 export const API_ORIGIN = configuredOrigin || inferredOrigin || 'https://invalid.localhost';
@@ -153,6 +166,25 @@ async function fetchMenuData(college?: string | null, force = false) {
   return menuRequest[resolvedCollege]!;
 }
 
+function normalizeRushHourRule(value: RushHourApiRecord): RushHourRule {
+  return {
+    ...value,
+    college: resolveMenuCollege(value.college),
+  };
+}
+
+function normalizeRushHourStatus(value: {
+  isRushHour?: boolean;
+  current?: RushHourApiRecord | null;
+  all?: RushHourApiRecord[];
+}): RushHourStatus {
+  return {
+    isRushHour: Boolean(value?.isRushHour),
+    current: value?.current ? normalizeRushHourRule(value.current) : null,
+    all: Array.isArray(value?.all) ? value.all.map(normalizeRushHourRule) : [],
+  };
+}
+
 type RazorpayCreateOrderResponse = {
   order: Order;
   razorpay: {
@@ -232,6 +264,21 @@ export const menuApi = {
   getCachedMenu: (college?: string | null) => getFreshMenuCache(college) || [],
 };
 
+export const rushHoursApi = {
+  getStatus: async (college?: string | null) => {
+    const response = await api.get('/rush-hours', {
+      params: {
+        college: resolveMenuCollege(college),
+      },
+    });
+
+    return {
+      ...response,
+      data: normalizeRushHourStatus(response.data),
+    };
+  },
+};
+
 export async function warmupBackend() {
   if (!configuredOrigin && !inferredOrigin) {
     return;
@@ -241,7 +288,15 @@ export async function warmupBackend() {
 }
 
 export const orderApi = {
-  createOrder: async (data: { items: any[]; scheduledTime: string }): Promise<AxiosResponse<PaymentInitResponse>> => {
+  createOrder: async (data: {
+    items: Array<{
+      menuItemId: string;
+      quantity: number;
+      tempPreference?: string;
+      chefNote?: string;
+    }>;
+    scheduledTime: string;
+  }): Promise<AxiosResponse<PaymentInitResponse>> => {
     const response = await api.post<CreateOrderResponse>('/orders/create', data);
 
     if ('razorpay' in response.data && 'order' in response.data) {

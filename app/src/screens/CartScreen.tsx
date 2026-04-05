@@ -4,10 +4,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,10 +36,12 @@ export default function CartScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const userCollege = user?.college;
-  const { items, addItem, updateQuantity, setScheduledTime, total } = useCartStore();
+  const { items, addItem, updateChefNote, updateQuantity, setScheduledTime, total } =
+    useCartStore();
   const [suggestedItems, setSuggestedItems] = useState<MenuItem[]>([]);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [selectedPickupTime, setSelectedPickupTime] = useState(
     items[0]?.scheduledTime || getDefaultPickupTime(new Date(), userCollege),
   );
@@ -63,6 +65,18 @@ export default function CartScreen() {
     setSelectedPickupTime(currentPickupTime);
   }, [items, userCollege]);
 
+  useEffect(() => {
+    setExpandedNotes((current) => {
+      const next: Record<string, boolean> = {};
+
+      items.forEach((item) => {
+        next[item.menuItem.id] = current[item.menuItem.id] || Boolean(item.chefNote);
+      });
+
+      return next;
+    });
+  }, [items]);
+
   const subtotal = total();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const canteenName = getCanteenName(user?.college);
@@ -81,6 +95,7 @@ export default function CartScreen() {
           menuItemId: getMenuItemId(item.menuItem),
           quantity: item.quantity,
           tempPreference: item.tempPreference,
+          chefNote: item.chefNote,
         }))
         .filter((item) => item.menuItemId && item.quantity > 0);
 
@@ -115,12 +130,26 @@ export default function CartScreen() {
         existingItem?.scheduledTime ||
         selectedPickupTime ||
         getDefaultPickupTime(new Date(), userCollege),
+      chefNote: existingItem?.chefNote || '',
     });
   };
 
   const handlePickupTimeChange = async (time: string) => {
     setSelectedPickupTime(time);
     await setScheduledTime(time);
+  };
+
+  const handleChefNoteToggle = async (menuItemId: string, hasChefNote: boolean) => {
+    if (hasChefNote) {
+      await updateChefNote(menuItemId, '');
+      setExpandedNotes((current) => ({ ...current, [menuItemId]: false }));
+      return;
+    }
+
+    setExpandedNotes((current) => ({
+      ...current,
+      [menuItemId]: !current[menuItemId],
+    }));
   };
 
   if (items.length === 0) {
@@ -180,42 +209,79 @@ export default function CartScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Your Order</Text>
           <View style={styles.cardStack}>
-            {items.map((item) => (
-              <View key={item.menuItem.id} style={styles.orderRow}>
-                <Image source={{ uri: item.menuItem.imageUrl }} style={styles.itemImage} />
+            {items.map((item) => {
+              const hasChefNote = Boolean(item.chefNote);
+              const showChefNote = expandedNotes[item.menuItem.id] || hasChefNote;
+              const noteToggleLabel = hasChefNote
+                ? 'Remove chef note'
+                : showChefNote
+                  ? 'Hide note'
+                  : 'Add note to chef';
 
-                <View style={styles.orderInfo}>
-                  <Text style={styles.itemName} numberOfLines={1}>
-                    {item.menuItem.name}
-                  </Text>
-                  <Text style={styles.itemMeta}>
-                    {item.tempPreference.charAt(0).toUpperCase() + item.tempPreference.slice(1)} · Pickup {formatPickupTime(item.scheduledTime)}
-                  </Text>
-                  <Text style={styles.itemPrice}>₹{item.menuItem.price}</Text>
-                </View>
+              return (
+                <View key={item.menuItem.id} style={styles.orderItemCard}>
+                  <View style={styles.orderRow}>
+                    <Image source={{ uri: item.menuItem.imageUrl }} style={styles.itemImage} />
 
-                <View style={styles.stepperWrap}>
-                  <View style={styles.inlineStepper}>
-                    <TouchableOpacity
-                      activeOpacity={0.9}
-                      style={styles.inlineStepperButton}
-                      onPress={() => updateQuantity(item.menuItem.id, item.quantity - 1)}
-                    >
-                      <AppIcon name="minus" size={14} color={palette.surface} />
-                    </TouchableOpacity>
-                    <Text style={styles.inlineStepperValue}>{item.quantity}</Text>
-                    <TouchableOpacity
-                      activeOpacity={0.9}
-                      style={styles.inlineStepperButton}
-                      onPress={() => updateQuantity(item.menuItem.id, item.quantity + 1)}
-                    >
-                      <AppIcon name="plus" size={14} color={palette.surface} />
-                    </TouchableOpacity>
+                    <View style={styles.orderInfo}>
+                      <Text style={styles.itemName} numberOfLines={1}>
+                        {item.menuItem.name}
+                      </Text>
+                      <Text style={styles.itemMeta}>
+                        {item.tempPreference.charAt(0).toUpperCase() + item.tempPreference.slice(1)}{' '}
+                        · Pickup {formatPickupTime(item.scheduledTime)}
+                      </Text>
+                      <Text style={styles.itemPrice}>₹{item.menuItem.price}</Text>
+                    </View>
+
+                    <View style={styles.stepperWrap}>
+                      <View style={styles.inlineStepper}>
+                        <TouchableOpacity
+                          activeOpacity={0.9}
+                          style={styles.inlineStepperButton}
+                          onPress={() => updateQuantity(item.menuItem.id, item.quantity - 1)}
+                        >
+                          <AppIcon name="minus" size={14} color={palette.surface} />
+                        </TouchableOpacity>
+                        <Text style={styles.inlineStepperValue}>{item.quantity}</Text>
+                        <TouchableOpacity
+                          activeOpacity={0.9}
+                          style={styles.inlineStepperButton}
+                          onPress={() => updateQuantity(item.menuItem.id, item.quantity + 1)}
+                        >
+                          <AppIcon name="plus" size={14} color={palette.surface} />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.lineTotal}>₹{item.menuItem.price * item.quantity}</Text>
+                    </View>
                   </View>
-                  <Text style={styles.lineTotal}>₹{item.menuItem.price * item.quantity}</Text>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={styles.noteToggle}
+                    onPress={() => void handleChefNoteToggle(item.menuItem.id, hasChefNote)}
+                  >
+                    <Text style={styles.noteToggleText}>{noteToggleLabel}</Text>
+                  </TouchableOpacity>
+
+                  {showChefNote ? (
+                    <View style={styles.noteCard}>
+                      <Text style={styles.noteLabel}>Chef note</Text>
+                      <TextInput
+                        style={styles.noteInput}
+                        value={item.chefNote}
+                        onChangeText={(text) => void updateChefNote(item.menuItem.id, text)}
+                        placeholder="Less spicy, extra crispy, or pack separately..."
+                        placeholderTextColor={palette.subtle}
+                        multiline
+                        maxLength={200}
+                      />
+                      <Text style={styles.noteCounter}>{item.chefNote.length}/200</Text>
+                    </View>
+                  ) : null}
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </View>
 
@@ -381,6 +447,9 @@ const styles = StyleSheet.create({
   cardStack: {
     gap: 14,
   },
+  orderItemCard: {
+    gap: 10,
+  },
   orderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -437,6 +506,43 @@ const styles = StyleSheet.create({
   lineTotal: {
     color: palette.muted,
     fontSize: 12,
+    fontWeight: '600',
+  },
+  noteToggle: {
+    alignSelf: 'flex-start',
+  },
+  noteToggleText: {
+    color: palette.accent,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  noteCard: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: 16,
+    padding: 12,
+    gap: 8,
+  },
+  noteLabel: {
+    color: palette.ink,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  noteInput: {
+    minHeight: 76,
+    borderRadius: 14,
+    backgroundColor: palette.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: palette.ink,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlignVertical: 'top',
+  },
+  noteCounter: {
+    alignSelf: 'flex-end',
+    color: palette.muted,
+    fontSize: 11,
     fontWeight: '600',
   },
   suggestionsSection: {

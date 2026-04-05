@@ -10,7 +10,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { menuApi } from '../api';
+import { menuApi, rushHoursApi } from '../api';
 import AppIcon from '../components/AppIcon';
 import FoodCard from '../components/FoodCard';
 import MenuSkeleton from '../components/MenuSkeleton';
@@ -18,7 +18,7 @@ import { getCanteenName } from '../constants/colleges';
 import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import { useFavoritesStore } from '../stores/favoritesStore';
-import { MainTabNavigationProp, MenuItem } from '../types';
+import { MainTabNavigationProp, MenuItem, RushHourStatus } from '../types';
 import { palette, shadows } from '../theme';
 import { formatPickupTime, getDefaultPickupTime, getLunchRushInfo } from '../utils/pickupTime';
 
@@ -45,6 +45,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(initialMenu.length === 0);
   const [errorMessage, setErrorMessage] = useState('');
   const [rushInfo, setRushInfo] = useState(() => getLunchRushInfo(new Date(), userCollege));
+  const [rushHourStatus, setRushHourStatus] = useState<RushHourStatus | null>(null);
   const canteenName = getCanteenName(userCollege);
 
   useEffect(() => {
@@ -55,11 +56,34 @@ export default function HomeScreen() {
   }, [userCollege]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    let cancelled = false;
+
+    const refreshRushHourStatus = async () => {
       setRushInfo(getLunchRushInfo(new Date(), userCollege));
+
+      try {
+        const response = await rushHoursApi.getStatus(userCollege);
+        if (!cancelled) {
+          setRushHourStatus(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch rush hour status:', error);
+        if (!cancelled) {
+          setRushHourStatus(null);
+        }
+      }
+    };
+
+    void refreshRushHourStatus();
+
+    const interval = setInterval(() => {
+      void refreshRushHourStatus();
     }, 60000);
 
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [userCollege]);
 
   useEffect(() => {
@@ -110,6 +134,7 @@ export default function HomeScreen() {
       quantity: nextQuantity,
       tempPreference: existingItem?.tempPreference || item.tempOptions[0] || 'normal',
       scheduledTime: existingItem?.scheduledTime || getDefaultPickupTime(new Date(), userCollege),
+      chefNote: existingItem?.chefNote || '',
     });
   };
 
@@ -178,6 +203,23 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
+
+        {rushHourStatus?.isRushHour && rushHourStatus.current ? (
+          <View style={styles.rushBanner}>
+            <View style={styles.rushBannerIcon}>
+              <AppIcon name="clock" size={16} color={palette.surface} />
+            </View>
+            <View style={styles.rushBannerCopy}>
+              <Text style={styles.rushBannerTitle}>{rushHourStatus.current.label}</Text>
+              <Text style={styles.rushBannerText}>{rushHourStatus.current.message}</Text>
+              {rushHourStatus.current.surchargePercent > 0 ? (
+                <Text style={styles.rushBannerSurcharge}>
+                  +{rushHourStatus.current.surchargePercent}% busy-hour charge is active right now.
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
 
         <FlatList
           data={categories}
@@ -439,6 +481,43 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontSize: 12,
     fontWeight: '500',
+  },
+  rushBanner: {
+    marginTop: 14,
+    backgroundColor: '#1E293B',
+    borderRadius: 20,
+    padding: 14,
+    flexDirection: 'row',
+    gap: 12,
+    ...shadows.card,
+  },
+  rushBannerIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(248, 113, 113, 0.22)',
+  },
+  rushBannerCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  rushBannerTitle: {
+    color: palette.surface,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  rushBannerText: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  rushBannerSurcharge: {
+    color: '#FDE68A',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
   },
   categoryList: {
     paddingTop: 16,

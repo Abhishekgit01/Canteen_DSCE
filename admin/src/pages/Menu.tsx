@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { menuApi } from '../api';
+import { useAuth } from '../hooks/useAuth';
 import './Menu.css';
 
 interface MenuItem {
@@ -13,35 +14,76 @@ interface MenuItem {
   tempOptions: string[];
   isAvailable: boolean;
   isFeatured?: boolean;
+  college?: string;
 }
 
+const COLLEGE_OPTIONS = ['DSCE', 'NIE'] as const;
+
+type CollegeOption = (typeof COLLEGE_OPTIONS)[number];
+
+type MenuFormState = {
+  name: string;
+  description: string;
+  imageUrl: string;
+  price: string;
+  calories: string;
+  category: string;
+  tempOptions: string[];
+  isAvailable: boolean;
+  isFeatured: boolean;
+  college: CollegeOption;
+};
+
+const resolveCollege = (value?: string | null): CollegeOption => (value === 'NIE' ? 'NIE' : 'DSCE');
+
+const createEmptyForm = (college: CollegeOption): MenuFormState => ({
+  name: '',
+  description: '',
+  imageUrl: '',
+  price: '',
+  calories: '',
+  category: 'meals',
+  tempOptions: [],
+  isAvailable: true,
+  isFeatured: false,
+  college,
+});
+
 export default function MenuPage() {
+  const { user } = useAuth();
+  const managerCollege = resolveCollege(user?.college);
+  const isAdmin = user?.role === 'admin';
   const [items, setItems] = useState<MenuItem[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    imageUrl: '',
-    price: '',
-    calories: '',
-    category: 'meals',
-    tempOptions: [] as string[],
-    isAvailable: true,
-    isFeatured: false,
-  });
+  const [selectedCollege, setSelectedCollege] = useState<CollegeOption>(managerCollege);
+  const [formData, setFormData] = useState<MenuFormState>(() => createEmptyForm(managerCollege));
 
   useEffect(() => {
-    fetchMenu();
-  }, []);
+    setSelectedCollege(managerCollege);
+    setFormData((current) => ({
+      ...current,
+      college: current.college || managerCollege,
+    }));
+  }, [managerCollege]);
+
+  useEffect(() => {
+    void fetchMenu();
+  }, [selectedCollege, user?.college, user?.role]);
 
   const fetchMenu = async () => {
     try {
-      const response = await menuApi.getMenu();
+      const response = await menuApi.getMenu(isAdmin ? selectedCollege : user?.college);
       setItems(response.data);
     } catch (error) {
       console.error('Failed to fetch menu:', error);
     }
+  };
+
+  const resetForm = (college = isAdmin ? selectedCollege : managerCollege) => {
+    setIsAdding(false);
+    setEditingId(null);
+    setFormData(createEmptyForm(college));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,6 +92,7 @@ export default function MenuPage() {
       ...formData,
       price: Number(formData.price),
       calories: Number(formData.calories),
+      college: isAdmin ? formData.college : managerCollege,
     };
 
     try {
@@ -58,20 +101,8 @@ export default function MenuPage() {
       } else {
         await menuApi.createItem(data);
       }
-      setIsAdding(false);
-      setEditingId(null);
-      setFormData({
-        name: '',
-        description: '',
-        imageUrl: '',
-        price: '',
-        calories: '',
-        category: 'meals',
-        tempOptions: [],
-        isAvailable: true,
-        isFeatured: false,
-      });
-      fetchMenu();
+      resetForm();
+      void fetchMenu();
     } catch (error) {
       console.error('Failed to save item:', error);
     }
@@ -98,10 +129,43 @@ export default function MenuPage() {
   return (
     <div className="menu-page">
       <div className="page-header">
-        <h1>Menu Management</h1>
-        <button className="btn btn-primary" onClick={() => setIsAdding(true)}>
-          Add Item
-        </button>
+        <div>
+          <h1>Menu Management</h1>
+          <p className="menu-subtitle">
+            {isAdmin
+              ? 'Switch colleges to manage each campus menu separately.'
+              : `Managing ${managerCollege} menu items.`}
+          </p>
+        </div>
+        <div className="menu-toolbar">
+          {isAdmin ? (
+            <select
+              className="input menu-filter"
+              value={selectedCollege}
+              onChange={(e) => {
+                const nextCollege = resolveCollege(e.target.value);
+                setSelectedCollege(nextCollege);
+                setFormData((current) => ({ ...current, college: nextCollege }));
+              }}
+            >
+              {COLLEGE_OPTIONS.map((college) => (
+                <option key={college} value={college}>
+                  {college} menu
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setEditingId(null);
+              setFormData(createEmptyForm(isAdmin ? selectedCollege : managerCollege));
+              setIsAdding(true);
+            }}
+          >
+            Add Item
+          </button>
+        </div>
       </div>
 
       {(isAdding || editingId) && (
@@ -156,14 +220,28 @@ export default function MenuPage() {
                 <option value="beverages">Beverages</option>
                 <option value="desserts">Desserts</option>
               </select>
+              {isAdmin ? (
+                <select
+                  className="input"
+                  value={formData.college}
+                  onChange={(e) =>
+                    setFormData({ ...formData, college: resolveCollege(e.target.value) })
+                  }
+                >
+                  {COLLEGE_OPTIONS.map((college) => (
+                    <option key={college} value={college}>
+                      {college}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
               <div className="form-actions">
                 <button type="submit" className="btn btn-primary">Save</button>
                 <button
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => {
-                    setIsAdding(false);
-                    setEditingId(null);
+                    resetForm();
                   }}
                 >
                   Cancel
@@ -179,6 +257,7 @@ export default function MenuPage() {
           <tr>
             <th>Image</th>
             <th>Name</th>
+            <th>College</th>
             <th>Category</th>
             <th>Price</th>
             <th>Calories</th>
@@ -194,6 +273,11 @@ export default function MenuPage() {
                 <img src={item.imageUrl} alt={item.name} className="item-image" />
               </td>
               <td>{item.name}</td>
+              <td>
+                <span className="menu-college-badge">
+                  {resolveCollege(item.college)}
+                </span>
+              </td>
               <td>{item.category}</td>
               <td>₹{item.price}</td>
               <td>{item.calories}</td>
@@ -232,6 +316,7 @@ export default function MenuPage() {
                       tempOptions: item.tempOptions,
                       isAvailable: item.isAvailable,
                       isFeatured: !!item.isFeatured,
+                      college: resolveCollege(item.college),
                     });
                   }}
                 >

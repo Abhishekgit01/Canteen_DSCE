@@ -14,6 +14,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET is not set in environment variables');
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_COOLDOWN_MS = 60 * 1000;
+const OTP_DELIVERY_GRACE_MS = 1500;
 type AuthVerificationMode = 'auto' | 'email' | 'none';
 type OtpPurpose = 'signup' | 'password_reset';
 const INTERNAL_GOOGLE_ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -41,6 +42,14 @@ const getOtpServiceErrorMessage = () =>
   isEmailConfigured()
     ? 'OTP delivery is taking too long. Please try again in a moment.'
     : 'OTP email service is not configured on the backend. Add RESEND_API_KEY to backend env.';
+
+const getOtpRequestErrorMessage = (error: unknown) => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return getOtpServiceErrorMessage();
+};
 
 const getOtpCooldownMessage = (otpSentAt?: Date | null) => {
   if (!otpSentAt) {
@@ -107,15 +116,59 @@ const createInternalGoogleUsn = async (googleId: string): Promise<string> => {
   throw new Error('Could not allocate an internal Google user ID');
 };
 
-const queueOtpEmail = (email: string, name: string, otp: string, college?: string | null) => {
-  sendOTPEmail(email, name, otp, college).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`Email send failed for ${email}:`, message);
+const logOtpDeliveryFailure = (email: string, otp: string, message: string) => {
+  console.error(`Email send failed for ${email}:`, message);
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.info(`[DEV OTP FALLBACK] OTP for ${email}: ${otp}`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.info(`[DEV OTP FALLBACK] OTP for ${email}: ${otp}`);
+  }
+};
+
+const getOtpDeliveryErrorMessage = (message?: string) => {
+  const normalized = String(message || '').toLowerCase();
+
+  if (
+    normalized.includes('verify') && normalized.includes('domain') ||
+    normalized.includes('own email address') ||
+    normalized.includes('testing emails')
+  ) {
+    return 'OTP email delivery is blocked by the current Resend sender. Verify a sending domain in Resend before using OTP signup.';
+  }
+
+  if (normalized.includes('api key') || normalized.includes('unauthorized')) {
+    return 'OTP email service is not configured correctly on the backend.';
+  }
+
+  return 'Could not send the OTP email. Please try again in a moment.';
+};
+
+const sendOtpWithGracePeriod = async (
+  email: string,
+  name: string,
+  otp: string,
+  college?: string | null,
+) => {
+  const deliveryPromise = sendOTPEmail(email, name, otp, college).then((result) => {
+    if (!result.success) {
+      logOtpDeliveryFailure(email, otp, result.error);
     }
+
+    return result;
   });
+
+  const immediateResult = await Promise.race([
+    deliveryPromise,
+    new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), OTP_DELIVERY_GRACE_MS);
+    }),
+  ]);
+
+  if (immediateResult === null) {
+    void deliveryPromise;
+    return { success: true as const };
+  }
+
+  return immediateResult;
 };
 
 const supportsRosterLookup = (college: SupportedCollege) => college === 'DSCE' || college === 'NIE';
@@ -180,7 +233,13 @@ const createAndQueueOtp = async ({
   });
 
   await User.updateOne({ _id: user._id }, { $set: { otpSentAt } });
-  queueOtpEmail(email, name, otp, college || user.college);
+  const deliveryResult = await sendOtpWithGracePeriod(email, name, otp, college || user.college);
+
+  if (!deliveryResult.success) {
+    await OTP.deleteMany({ email, purpose });
+    await User.updateOne({ _id: user._id }, { $unset: { otpSentAt: 1 } });
+    throw new Error(getOtpDeliveryErrorMessage(deliveryResult.error));
+  }
 };
 
 const createAuthResponse = (user: {
@@ -452,7 +511,7 @@ router.post('/signup', async (req: Request, res: Response) => {
         error:
           verificationMode === 'auto'
             ? 'Could not send the OTP email. Please try again in a moment.'
-            : getOtpServiceErrorMessage(),
+            : getOtpRequestErrorMessage(error),
       });
     }
 
@@ -551,7 +610,7 @@ router.post('/resend-otp', async (req: Request, res: Response) => {
     } catch (error) {
       console.error('OTP resend error:', error);
       return res.status(503).json({
-        error: getOtpServiceErrorMessage(),
+        error: getOtpRequestErrorMessage(error),
       });
     }
 
@@ -604,7 +663,7 @@ router.post('/forgot-password/request', async (req: Request, res: Response) => {
       });
     } catch (error) {
       console.error('Password reset OTP error:', error);
-      return res.status(503).json({ error: getOtpServiceErrorMessage() });
+      return res.status(503).json({ error: getOtpRequestErrorMessage(error) });
     }
 
     return res.json({ message: 'Password reset OTP sent' });

@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import './Layout.css';
 
@@ -15,6 +15,7 @@ export default function Layout({ children }: { children?: React.ReactNode }) {
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', roles: ['manager', 'admin'] },
     { path: '/menu', label: 'Menu', roles: ['manager', 'admin'] },
+    { path: '/rush-hours', label: 'Rush Hours', roles: ['manager', 'admin'] },
     { path: '/orders', label: 'Orders', roles: ['staff', 'manager', 'admin'] },
     { path: '/users', label: 'Users', roles: ['admin'] },
   ];
@@ -24,7 +25,10 @@ export default function Layout({ children }: { children?: React.ReactNode }) {
   return (
     <div className="layout">
       <aside className="sidebar">
-        <div className="logo">DSCE Canteen</div>
+        <div className="logo">
+          <span>{user?.college ? `${user.college} Canteen` : 'Canteen Control'}</span>
+          <small className="logo-subtitle">Manager dashboard</small>
+        </div>
         <nav>
           {visibleNav.map(item => (
             <Link
@@ -50,5 +54,3 @@ export default function Layout({ children }: { children?: React.ReactNode }) {
     </div>
   );
 }
-
-import { Outlet } from 'react-router-dom';

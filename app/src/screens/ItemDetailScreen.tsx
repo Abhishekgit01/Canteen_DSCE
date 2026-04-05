@@ -40,6 +40,7 @@ export default function ItemDetailScreen() {
       quantity,
       tempPreference: selectedTemp,
       scheduledTime: selectedPickupTime,
+      chefNote: '',
     });
     navigation.goBack();
   };

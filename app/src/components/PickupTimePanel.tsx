@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AppIcon from './AppIcon';
@@ -30,10 +30,24 @@ export default function PickupTimePanel({
   college,
 }: PickupTimePanelProps) {
   const [showPicker, setShowPicker] = useState(false);
-  const now = useMemo(() => new Date(), []);
-  const quickChoices = useMemo(() => getPickupQuickChoices(now, 4, college), [college, now]);
-  const { minDate, maxDate } = useMemo(() => getPickupWindow(now, college), [college, now]);
-  const pickerDate = useMemo(() => pickupTimeToDate(value, now), [now, value]);
+  const [referenceNow, setReferenceNow] = useState(() => new Date());
+
+  useEffect(() => {
+    setReferenceNow(new Date());
+  }, [college, showPicker, value]);
+
+  const quickChoices = useMemo(
+    () => getPickupQuickChoices(referenceNow, 4, college),
+    [college, referenceNow],
+  );
+  const { minDate, maxDate } = useMemo(
+    () => getPickupWindow(referenceNow, college),
+    [college, referenceNow],
+  );
+  const pickerDate = useMemo(
+    () => pickupTimeToDate(value, referenceNow),
+    [referenceNow, value],
+  );
 
   const applyTime = (nextTime: string) => {
     void Promise.resolve(onChange(nextTime)).catch((error) => {
@@ -50,7 +64,9 @@ export default function PickupTimePanel({
       return;
     }
 
-    const safeDate = clampPickupDate(selectedDate, now, college);
+    const currentNow = new Date();
+    setReferenceNow(currentNow);
+    const safeDate = clampPickupDate(selectedDate, currentNow, college);
     applyTime(dateToPickupTime(safeDate));
   };
 
@@ -74,13 +90,18 @@ export default function PickupTimePanel({
           <Text style={[styles.highlightValue, compact && styles.highlightValueCompact]}>
             {formatPickupTime(value)}
           </Text>
-          <Text style={styles.highlightHint}>{getPickupSelectionHint(value, now, college)}</Text>
+          <Text style={styles.highlightHint}>
+            {getPickupSelectionHint(value, referenceNow, college)}
+          </Text>
         </View>
 
         <TouchableOpacity
           activeOpacity={0.9}
           style={[styles.customButton, compact && styles.customButtonCompact]}
-          onPress={() => setShowPicker(true)}
+          onPress={() => {
+            setReferenceNow(new Date());
+            setShowPicker(true);
+          }}
         >
           <Text style={styles.customButtonText}>Customise</Text>
           <AppIcon name="chevron-right" size={16} color={palette.surface} />

@@ -22,6 +22,12 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(numericValue) ? numericValue : fallback;
 }
 
+export function sanitizeChefNote(value: unknown) {
+  return typeof value === 'string'
+    ? value.replace(/<[^>]*>/g, '').slice(0, 200).trim()
+    : '';
+}
+
 export function getMenuItemId(value: unknown) {
   if (!isRecord(value)) {
     return '';
@@ -99,5 +105,6 @@ export function normalizeCartItem(value: unknown): CartItem | null {
     quantity,
     tempPreference,
     scheduledTime,
+    chefNote: sanitizeChefNote(value.chefNote),
   };
 }

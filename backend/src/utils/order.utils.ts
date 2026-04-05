@@ -29,13 +29,14 @@ export function serializeOrder(order: any, options: { includeQrToken?: boolean }
     id: toId(doc._id),
     userId: toId(doc.userId),
     items: Array.isArray(doc.items)
-      ? doc.items.map((item: any) => ({
-          menuItemId: toId(item.menuItemId),
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          tempPreference: item.tempPreference,
-        }))
+        ? doc.items.map((item: any) => ({
+            menuItemId: toId(item.menuItemId),
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            tempPreference: item.tempPreference,
+            chefNote: item.chefNote,
+          }))
       : [],
     scheduledTime: doc.scheduledTime,
     totalAmount: doc.totalAmount,
