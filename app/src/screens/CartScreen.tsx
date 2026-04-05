@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { menuApi, orderApi } from '../api';
 import AppIcon from '../components/AppIcon';
 import FoodCard from '../components/FoodCard';
+import PickupTimePanel from '../components/PickupTimePanel';
 import { useCartStore } from '../stores/cartStore';
 import { MainTabNavigationProp, MenuItem } from '../types';
 import { palette, shadows } from '../theme';
@@ -22,9 +23,6 @@ import { getMenuItemId } from '../utils/menu';
 import {
   formatPickupTime,
   getDefaultPickupTime,
-  getLunchRushWindowLabel,
-  getPickupTimeSlots,
-  PICKUP_TIME_CONFIG,
 } from '../utils/pickupTime';
 
 function getErrorMessage(error: any) {
@@ -39,8 +37,6 @@ export default function CartScreen() {
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedPickupTime, setSelectedPickupTime] = useState(items[0]?.scheduledTime || getDefaultPickupTime());
-  const [showPicker, setShowPicker] = useState(false);
-  const pickupSlots = getPickupTimeSlots();
 
   useEffect(() => {
     const loadSuggestions = async () => {
@@ -57,9 +53,9 @@ export default function CartScreen() {
   }, [items]);
 
   useEffect(() => {
-    const currentPickupTime = items[0]?.scheduledTime || pickupSlots[0] || getDefaultPickupTime();
+    const currentPickupTime = items[0]?.scheduledTime || getDefaultPickupTime();
     setSelectedPickupTime(currentPickupTime);
-  }, [items, pickupSlots]);
+  }, [items]);
 
   const subtotal = total();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -112,30 +108,10 @@ export default function CartScreen() {
     });
   };
 
-  const handlePickupTimeChange = async (event: any, selectedDate?: Date) => {
-    setShowPicker(false);
-    if (selectedDate) {
-      const hours = selectedDate.getHours().toString().padStart(2, '0');
-      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-      const timeStr = `${hours}:${minutes}`;
-      setSelectedPickupTime(timeStr);
-      await setScheduledTime(timeStr);
-    }
+  const handlePickupTimeChange = async (time: string) => {
+    setSelectedPickupTime(time);
+    await setScheduledTime(time);
   };
-
-  const pickerDate = new Date();
-  const [h, m] = selectedPickupTime.split(':').map(Number);
-  pickerDate.setHours(h || 12, m || 0, 0, 0);
-
-  const minDate = new Date();
-  minDate.setHours(PICKUP_TIME_CONFIG.serviceStartHour, 0, 0, 0);
-  const rawMin = new Date(Date.now() + PICKUP_TIME_CONFIG.leadMinutes * 60000);
-  const actualMinDate = rawMin > minDate ? rawMin : minDate;
-
-  const maxDate = new Date();
-  maxDate.setHours(PICKUP_TIME_CONFIG.serviceEndHour, 0, 0, 0);
-  
-  const finalMinDate = actualMinDate > maxDate ? maxDate : actualMinDate;
 
   if (items.length === 0) {
     return (
@@ -183,44 +159,11 @@ export default function CartScreen() {
         </View>
 
         <View style={styles.card}>
-          <View style={styles.pickupHeader}>
-            <View style={styles.pickupIconWrap}>
-              <AppIcon name="clock" size={18} color={palette.accent} />
-            </View>
-            <View style={styles.pickupTextWrap}>
-              <Text style={styles.sectionTitle}>Pickup Time</Text>
-              <Text style={styles.pickupHint}>
-                Selected for the whole order: {formatPickupTime(selectedPickupTime)}
-              </Text>
-            </View>
-          </View>
-
-          <Text style={styles.rushHint}>Lunch rush window: {getLunchRushWindowLabel()}</Text>
-
-          <TouchableOpacity
-            activeOpacity={0.92}
-            style={styles.timeChipActive}
-            onPress={() => setShowPicker(true)}
-          >
-            <View style={styles.pickerButtonContent}>
-              <Text style={styles.timeChipTextActive}>
-                Tap to select time ({formatPickupTime(selectedPickupTime)})
-              </Text>
-              <AppIcon name="clock" size={16} color={palette.surface} />
-            </View>
-          </TouchableOpacity>
-
-          {showPicker && (
-            <DateTimePicker
-              value={pickerDate}
-              mode="time"
-              is24Hour={false}
-              display="default"
-              minimumDate={finalMinDate}
-              maximumDate={maxDate}
-              onChange={handlePickupTimeChange}
-            />
-          )}
+          <PickupTimePanel
+            value={selectedPickupTime}
+            onChange={handlePickupTimeChange}
+            contextLabel="Selected for the whole order"
+          />
         </View>
 
         <View style={styles.card}>
@@ -419,65 +362,10 @@ const styles = StyleSheet.create({
     gap: 14,
     ...shadows.card,
   },
-  pickupHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  pickupIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: palette.warningSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pickupTextWrap: {
-    flex: 1,
-    gap: 3,
-  },
-  pickupHint: {
-    color: palette.muted,
-    fontSize: 13,
-  },
-  rushHint: {
-    color: palette.accent,
-    fontSize: 12,
-    fontWeight: '700',
-  },
   sectionTitle: {
     color: palette.ink,
     fontSize: 18,
     fontWeight: '800',
-  },
-  slotList: {
-    gap: 10,
-    paddingRight: 6,
-  },
-  timeChip: {
-    backgroundColor: palette.surfaceMuted,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    borderRadius: 14,
-  },
-  timeChipActive: {
-    backgroundColor: palette.accent,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 14,
-  },
-  pickerButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  timeChipText: {
-    color: palette.ink,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  timeChipTextActive: {
-    color: palette.surface,
   },
   cardStack: {
     gap: 14,

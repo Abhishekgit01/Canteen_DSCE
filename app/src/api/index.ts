@@ -111,6 +111,11 @@ type GoogleLoginPendingResponse = {
   message: string;
 };
 
+type GoogleAuthPayload = {
+  idToken?: string;
+  accessToken?: string;
+};
+
 type SignupResponse =
   | {
       verificationRequired: true;
@@ -135,9 +140,9 @@ export const authApi = {
     api.post<AuthResponse>('/auth/verify-otp', data),
   resendOtp: (data: { email: string }) =>
     api.post('/auth/resend-otp', data),
-  googleLogin: (idToken: string) =>
-    api.post<AuthResponse | GoogleLoginPendingResponse>('/auth/google', { idToken }),
-  googleCompleteSignup: (data: { idToken: string; college: College }) =>
+  googleLogin: (data: GoogleAuthPayload) =>
+    api.post<AuthResponse | GoogleLoginPendingResponse>('/auth/google', data),
+  googleCompleteSignup: (data: GoogleAuthPayload & { college: College }) =>
     api.post<AuthResponse>('/auth/google/complete', data),
   requestPasswordResetOtp: (data: { email: string }) =>
     api.post<{ message: string }>('/auth/forgot-password/request', data),

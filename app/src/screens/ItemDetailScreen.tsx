@@ -11,11 +11,12 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppIcon from '../components/AppIcon';
+import PickupTimePanel from '../components/PickupTimePanel';
 import { useFavoritesStore } from '../stores/favoritesStore';
 import { useCartStore } from '../stores/cartStore';
 import { RootStackNavigationProp, RootStackRouteProp } from '../types';
 import { palette, shadows } from '../theme';
-import { formatPickupTime, getDefaultPickupTime, getPickupTimeSlots } from '../utils/pickupTime';
+import { getDefaultPickupTime } from '../utils/pickupTime';
 
 export default function ItemDetailScreen() {
   const route = useRoute<RootStackRouteProp<'ItemDetail'>>();
@@ -27,9 +28,8 @@ export default function ItemDetailScreen() {
 
   const [selectedTemp, setSelectedTemp] = useState(item.tempOptions[0] || 'normal');
   const [quantity, setQuantity] = useState(1);
-  const [scheduledTime, setScheduledTime] = useState('');
-  const timeSlots = getPickupTimeSlots();
-  const selectedPickupTime = scheduledTime || timeSlots[0] || getDefaultPickupTime();
+  const [scheduledTime, setScheduledTime] = useState(getDefaultPickupTime());
+  const selectedPickupTime = scheduledTime || getDefaultPickupTime();
 
   const handleAddToCart = async () => {
     await addItem({
@@ -101,24 +101,12 @@ export default function ItemDetailScreen() {
             ) : null}
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Pickup Time</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slotList}>
-                {timeSlots.map((time) => {
-                  const active = selectedPickupTime === time;
-                  return (
-                    <TouchableOpacity
-                      key={time}
-                      activeOpacity={0.92}
-                      style={[styles.timeChip, active && styles.timeChipActive]}
-                      onPress={() => setScheduledTime(time)}
-                    >
-                      <Text style={[styles.timeChipText, active && styles.timeChipTextActive]}>
-                        {formatPickupTime(time)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+              <PickupTimePanel
+                value={selectedPickupTime}
+                onChange={setScheduledTime}
+                contextLabel="Add this item for"
+                compact
+              />
             </View>
 
             <View style={styles.section}>
@@ -261,27 +249,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   choiceChipTextActive: {
-    color: palette.surface,
-  },
-  slotList: {
-    gap: 10,
-    paddingRight: 6,
-  },
-  timeChip: {
-    backgroundColor: palette.surfaceMuted,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    borderRadius: 14,
-  },
-  timeChipActive: {
-    backgroundColor: palette.accent,
-  },
-  timeChipText: {
-    color: palette.ink,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  timeChipTextActive: {
     color: palette.surface,
   },
   quantityRow: {

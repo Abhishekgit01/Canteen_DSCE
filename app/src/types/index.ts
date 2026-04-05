@@ -121,7 +121,8 @@ export type RootStackParamList = {
   Otp: { email: string; purpose: OtpPurpose };
   ForgotPassword: { prefilledEmail?: string } | undefined;
   GoogleCollegeSelect: {
-    idToken: string;
+    idToken?: string;
+    accessToken?: string;
     email: string;
     name: string;
     picture?: string | null;

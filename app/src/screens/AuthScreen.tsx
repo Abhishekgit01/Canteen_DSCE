@@ -12,21 +12,93 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
 import { API_CONFIG_ERROR, authApi } from '../api';
+import { getGoogleSignInErrorMessage, signInWithGoogleNative } from '../lib/googleAuth';
 import type { College, RootStackScreenProps } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { palette, shadows } from '../theme';
 
-WebBrowser.maybeCompleteAuthSession();
+type GoogleLoginButtonProps = {
+  navigation: RootStackScreenProps<'Auth'>['navigation'];
+  selectedCollege: College;
+  onError: (message: string) => void;
+  mode: 'login' | 'signup';
+};
+
+function GoogleLoginButton({
+  navigation,
+  selectedCollege,
+  onError,
+  mode,
+}: GoogleLoginButtonProps) {
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const { setAuth } = useAuthStore();
+
+  const handleGoogleSignIn = async () => {
+    onError('');
+    setGoogleLoading(true);
+
+    try {
+      const credential = await signInWithGoogleNative();
+      if (!credential) {
+        setGoogleLoading(false);
+        return;
+      }
+
+      const response = await authApi.googleLogin({
+        accessToken: credential.accessToken,
+        idToken: credential.idToken,
+      });
+
+      if ('requiresCollege' in response.data && response.data.requiresCollege) {
+        navigation.navigate('GoogleCollegeSelect', {
+          accessToken: credential.accessToken,
+          idToken: credential.idToken,
+          email: response.data.email,
+          name: response.data.name,
+          picture: response.data.picture || credential.picture,
+          selectedCollege,
+        });
+        return;
+      }
+
+      const authData = response.data as { user: Parameters<typeof setAuth>[0]; token: string };
+      await setAuth(authData.user, authData.token);
+      navigation.replace('Main');
+    } catch (error: any) {
+      onError(error?.response?.data?.error || getGoogleSignInErrorMessage(error));
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.92}
+      style={[styles.googleButton, googleLoading && styles.buttonDisabled]}
+      onPress={() => void handleGoogleSignIn()}
+      disabled={googleLoading}
+    >
+      <Image
+        source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+        style={styles.googleLogo}
+      />
+      <Text style={styles.googleButtonText}>
+        {googleLoading
+          ? 'Opening Google...'
+          : mode === 'signup'
+            ? 'Sign up with Google'
+            : 'Continue with Google'}
+      </Text>
+    </TouchableOpacity>
+  );
+}
 
 export default function AuthScreen({ navigation, route }: RootStackScreenProps<'Auth'>) {
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const usnPattern = /^[1-9][A-Z]{2}\d{2}[A-Z]{2}\d{3}$/;
   const [isLogin, setIsLogin] = useState(route.params?.initialMode !== 'signup');
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedCollege, setSelectedCollege] = useState<College>(route.params?.selectedCollege ?? 'DSCE');
 
@@ -43,13 +115,7 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
 
   const { setAuth } = useAuthStore();
   const normalizedSignupUsn = useMemo(() => usn.trim().toUpperCase().replace(/\s+/g, ''), [usn]);
-  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    selectAccount: true,
-  });
+  const isGoogleConfigured = Platform.OS === 'android';
 
   useEffect(() => {
     if (route.params?.selectedCollege) {
@@ -69,32 +135,6 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
       setEmail(route.params.prefilledEmail);
     }
   }, [route.params?.prefilledEmail]);
-
-  useEffect(() => {
-    if (!googleResponse) {
-      return;
-    }
-
-    if (googleResponse.type !== 'success') {
-      if (googleResponse.type === 'error') {
-        setError('Google sign in failed. Try again.');
-      }
-
-      setGoogleLoading(false);
-      return;
-    }
-
-    const responseWithAuth = googleResponse as any;
-    const idToken = responseWithAuth.authentication?.idToken || responseWithAuth.params?.id_token;
-
-    if (!idToken) {
-      setError('Google sign in did not return an ID token.');
-      setGoogleLoading(false);
-      return;
-    }
-
-    void handleGoogleResponse(idToken);
-  }, [googleResponse]);
 
   useEffect(() => {
     setStudentName('');
@@ -160,33 +200,6 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
       setError(err.response?.data?.error || err.userMessage || API_CONFIG_ERROR || 'Login failed');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleResponse = async (idToken: string) => {
-    setError('');
-
-    try {
-      const response = await authApi.googleLogin(idToken);
-
-      if ('requiresCollege' in response.data && response.data.requiresCollege) {
-        navigation.navigate('GoogleCollegeSelect', {
-          idToken,
-          email: response.data.email,
-          name: response.data.name,
-          picture: response.data.picture,
-          selectedCollege,
-        });
-        return;
-      }
-
-      const authData = response.data as { user: Parameters<typeof setAuth>[0]; token: string };
-      await setAuth(authData.user, authData.token);
-      navigation.replace('Main');
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.userMessage || 'Google sign in failed. Try again.');
-    } finally {
-      setGoogleLoading(false);
     }
   };
 
@@ -328,24 +341,14 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity
-              activeOpacity={0.92}
-              style={[styles.googleButton, (!googleRequest || googleLoading) && styles.buttonDisabled]}
-              onPress={() => {
-                setError('');
-                setGoogleLoading(true);
-                void promptGoogleAsync();
-              }}
-              disabled={!googleRequest || googleLoading}
-            >
-              <Image
-                source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
-                style={styles.googleLogo}
+            {isGoogleConfigured ? (
+              <GoogleLoginButton
+                navigation={navigation}
+                selectedCollege={selectedCollege}
+                onError={setError}
+                mode="login"
               />
-              <Text style={styles.googleButtonText}>
-                {googleLoading ? 'Opening Google...' : 'Continue with Google'}
-              </Text>
-            </TouchableOpacity>
+            ) : null}
           </View>
         ) : (
           <View style={styles.formCard}>
@@ -409,6 +412,22 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
             >
               <Text style={styles.buttonText}>{loading ? 'Please wait...' : 'Continue to OTP'}</Text>
             </TouchableOpacity>
+            {isGoogleConfigured ? (
+              <>
+                <View style={styles.divider}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>OR</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                <GoogleLoginButton
+                  navigation={navigation}
+                  selectedCollege={selectedCollege}
+                  onError={setError}
+                  mode="signup"
+                />
+              </>
+            ) : null}
           </View>
         )}
       </ScrollView>

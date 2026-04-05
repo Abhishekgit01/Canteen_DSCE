@@ -19,6 +19,8 @@ type SupportedCollege = 'DSCE' | 'NIE';
 const supportedColleges: SupportedCollege[] = ['DSCE', 'NIE'];
 const INTERNAL_GOOGLE_ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 let googleClient: OAuth2Client | null = null;
+const GOOGLE_TOKEN_INFO_URL = 'https://oauth2.googleapis.com/tokeninfo';
+const GOOGLE_USER_INFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 
 const getAuthVerificationMode = (): AuthVerificationMode => {
   const value = String(process.env.AUTH_VERIFICATION_MODE || 'email')
@@ -53,12 +55,15 @@ const getOtpServiceErrorMessage = () =>
     ? 'OTP delivery is taking too long. Please try again in a moment.'
     : 'OTP email service is not configured on the backend. Add RESEND_API_KEY to backend env.';
 
-const getGoogleClientId = (): string => {
-  return String(process.env.GOOGLE_CLIENT_ID || '').trim();
+const getGoogleClientIds = (): string[] => {
+  return String(process.env.GOOGLE_CLIENT_ID || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
 };
 
 const getGoogleClient = (): OAuth2Client | null => {
-  const clientId = getGoogleClientId();
+  const clientId = getGoogleClientIds()[0];
 
   if (!clientId) {
     return null;
@@ -166,16 +171,16 @@ const createAuthResponse = (user: {
 };
 
 const verifyGoogleIdToken = async (idToken: string) => {
-  const clientId = getGoogleClientId();
+  const clientIds = getGoogleClientIds();
   const client = getGoogleClient();
 
-  if (!clientId || !client) {
+  if (clientIds.length === 0 || !client) {
     throw new Error('GOOGLE_CLIENT_ID is not configured');
   }
 
   const ticket = await client.verifyIdToken({
     idToken,
-    audience: clientId,
+    audience: clientIds,
   });
   const payload = ticket.getPayload();
 
@@ -189,6 +194,91 @@ const verifyGoogleIdToken = async (idToken: string) => {
     name: String(payload.name || payload.email).trim(),
     picture: payload.picture ? String(payload.picture) : null,
   };
+};
+
+const verifyGoogleAccessToken = async (accessToken: string) => {
+  const clientIds = getGoogleClientIds();
+
+  if (clientIds.length === 0) {
+    throw new Error('GOOGLE_CLIENT_ID is not configured');
+  }
+
+  const tokenInfoResponse = await fetch(
+    `${GOOGLE_TOKEN_INFO_URL}?access_token=${encodeURIComponent(accessToken)}`,
+  );
+
+  if (!tokenInfoResponse.ok) {
+    throw new Error('Invalid Google access token');
+  }
+
+  const tokenInfo = (await tokenInfoResponse.json()) as {
+    aud?: string;
+    audience?: string;
+    issued_to?: string;
+    scope?: string;
+    sub?: string;
+  };
+  const audience = String(tokenInfo.aud || tokenInfo.audience || tokenInfo.issued_to || '').trim();
+
+  if (!audience || !clientIds.includes(audience)) {
+    throw new Error('Google token audience mismatch');
+  }
+
+  const userInfoResponse = await fetch(GOOGLE_USER_INFO_URL, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!userInfoResponse.ok) {
+    throw new Error('Could not load Google profile');
+  }
+
+  const profile = (await userInfoResponse.json()) as {
+    sub?: string;
+    email?: string;
+    name?: string;
+    picture?: string;
+    email_verified?: boolean | string;
+    verified_email?: boolean | string;
+  };
+
+  const googleId = String(profile.sub || tokenInfo.sub || '').trim();
+  const email = String(profile.email || '').trim().toLowerCase();
+  const isVerifiedEmail =
+    profile.email_verified === true ||
+    profile.email_verified === 'true' ||
+    profile.verified_email === true ||
+    profile.verified_email === 'true';
+
+  if (!googleId || !email || !isVerifiedEmail) {
+    throw new Error('Google account email is not verified');
+  }
+
+  return {
+    googleId,
+    email,
+    name: String(profile.name || profile.email || '').trim(),
+    picture: profile.picture ? String(profile.picture) : null,
+  };
+};
+
+const verifyGoogleCredential = async ({
+  accessToken,
+  idToken,
+}: {
+  accessToken?: string;
+  idToken?: string;
+}) => {
+  if (idToken) {
+    return verifyGoogleIdToken(idToken);
+  }
+
+  if (accessToken) {
+    return verifyGoogleAccessToken(accessToken);
+  }
+
+  throw new Error('Google credential required');
 };
 
 // Signup
@@ -471,17 +561,17 @@ router.post('/forgot-password/reset', async (req: Request, res: Response) => {
 
 router.post('/google', async (req: Request, res: Response) => {
   try {
-    const clientId = getGoogleClientId();
-    if (!clientId) {
+    if (getGoogleClientIds().length === 0) {
       return res.status(503).json({ error: 'Google authentication is not configured on this backend' });
     }
 
     const idToken = String(req.body?.idToken || '').trim();
-    if (!idToken) {
-      return res.status(400).json({ error: 'ID token required' });
+    const accessToken = String(req.body?.accessToken || '').trim();
+    if (!idToken && !accessToken) {
+      return res.status(400).json({ error: 'Google credential required' });
     }
 
-    const profile = await verifyGoogleIdToken(idToken);
+    const profile = await verifyGoogleCredential({ accessToken, idToken });
     let user = await User.findOne({ email: profile.email }).select('+passwordHash');
 
     if (user) {
@@ -524,23 +614,23 @@ router.post('/google', async (req: Request, res: Response) => {
 
 router.post('/google/complete', async (req: Request, res: Response) => {
   try {
-    const clientId = getGoogleClientId();
-    if (!clientId) {
+    if (getGoogleClientIds().length === 0) {
       return res.status(503).json({ error: 'Google authentication is not configured on this backend' });
     }
 
     const idToken = String(req.body?.idToken || '').trim();
+    const accessToken = String(req.body?.accessToken || '').trim();
     const college = normalizeCollege(req.body?.college);
 
-    if (!idToken) {
-      return res.status(400).json({ error: 'ID token required' });
+    if (!idToken && !accessToken) {
+      return res.status(400).json({ error: 'Google credential required' });
     }
 
     if (!college) {
       return res.status(400).json({ error: 'College is required' });
     }
 
-    const profile = await verifyGoogleIdToken(idToken);
+    const profile = await verifyGoogleCredential({ accessToken, idToken });
     const existing = await User.findOne({ email: profile.email }).select('+passwordHash');
 
     if (existing) {

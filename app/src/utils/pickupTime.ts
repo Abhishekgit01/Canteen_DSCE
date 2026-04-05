@@ -33,18 +33,58 @@ function setTimeForToday(base: Date, hours: number, minutes = 0) {
   return next;
 }
 
-export function getPickupTimeSlots(now = new Date()) {
-  const firstAvailable = roundUpToInterval(
+export function dateToPickupTime(date: Date) {
+  return getTimeString(date.getHours(), date.getMinutes());
+}
+
+export function pickupTimeToDate(value: string, base = new Date()) {
+  const [rawHours, rawMinutes] = value.split(':');
+  const hours = Number(rawHours);
+  const minutes = Number(rawMinutes);
+  const next = new Date(base);
+
+  next.setHours(Number.isFinite(hours) ? hours : 12, Number.isFinite(minutes) ? minutes : 0, 0, 0);
+  return next;
+}
+
+export function getPickupWindow(now = new Date()) {
+  const serviceStart = setTimeForToday(now, PICKUP_TIME_CONFIG.serviceStartHour);
+  const serviceEnd = setTimeForToday(now, PICKUP_TIME_CONFIG.serviceEndHour);
+  const leadTimeDate = roundUpToInterval(
     new Date(now.getTime() + PICKUP_TIME_CONFIG.leadMinutes * 60 * 1000),
     PICKUP_TIME_CONFIG.intervalMinutes,
   );
-  const serviceStart = setTimeForToday(now, PICKUP_TIME_CONFIG.serviceStartHour);
-  const serviceEnd = setTimeForToday(now, PICKUP_TIME_CONFIG.serviceEndHour);
-  const cursor = firstAvailable < serviceStart ? serviceStart : firstAvailable;
+
+  const minDate = leadTimeDate < serviceStart ? serviceStart : leadTimeDate;
+
+  return {
+    minDate: minDate > serviceEnd ? serviceEnd : minDate,
+    maxDate: serviceEnd,
+  };
+}
+
+export function clampPickupDate(date: Date, now = new Date()) {
+  const { minDate, maxDate } = getPickupWindow(now);
+  const rounded = roundUpToInterval(date, PICKUP_TIME_CONFIG.intervalMinutes);
+
+  if (rounded < minDate) {
+    return new Date(minDate);
+  }
+
+  if (rounded > maxDate) {
+    return new Date(maxDate);
+  }
+
+  return rounded;
+}
+
+export function getPickupTimeSlots(now = new Date()) {
+  const { minDate, maxDate } = getPickupWindow(now);
+  const cursor = new Date(minDate);
   const slots: string[] = [];
 
-  while (cursor <= serviceEnd) {
-    slots.push(getTimeString(cursor.getHours(), cursor.getMinutes()));
+  while (cursor <= maxDate) {
+    slots.push(dateToPickupTime(cursor));
     cursor.setMinutes(cursor.getMinutes() + PICKUP_TIME_CONFIG.intervalMinutes);
   }
 
@@ -56,25 +96,40 @@ export function getPickupTimeSlots(now = new Date()) {
 }
 
 export function getDefaultPickupTime(now = new Date()) {
-  return getPickupTimeSlots(now)[0];
+  return dateToPickupTime(getPickupWindow(now).minDate);
+}
+
+export function getPickupQuickChoices(now = new Date(), count = 4) {
+  return getPickupTimeSlots(now).slice(0, count);
 }
 
 export function formatPickupTime(value: string) {
-  const [rawHours, rawMinutes] = value.split(':');
-  const hours = Number(rawHours);
-  const minutes = Number(rawMinutes);
-
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
-    return value;
-  }
-
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
+  const date = pickupTimeToDate(value);
 
   return date.toLocaleTimeString([], {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+export function getPickupSelectionHint(value: string, now = new Date()) {
+  const selectedDate = pickupTimeToDate(value, now);
+  const minutesAway = Math.max(0, Math.ceil((selectedDate.getTime() - now.getTime()) / 60000));
+  const serviceClose = formatPickupTime(dateToPickupTime(getPickupWindow(now).maxDate));
+
+  if (minutesAway <= PICKUP_TIME_CONFIG.leadMinutes + PICKUP_TIME_CONFIG.intervalMinutes) {
+    return `Earliest ready window today · Service closes at ${serviceClose}`;
+  }
+
+  if (minutesAway < 60) {
+    return `About ${minutesAway} minutes from now · Service closes at ${serviceClose}`;
+  }
+
+  const hours = Math.floor(minutesAway / 60);
+  const minutes = minutesAway % 60;
+  const formattedLead = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+
+  return `About ${formattedLead} from now · Service closes at ${serviceClose}`;
 }
 
 export function getLunchRushWindowLabel() {

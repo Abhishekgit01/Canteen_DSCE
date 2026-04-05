@@ -20,7 +20,7 @@ import { useCartStore } from '../stores/cartStore';
 import { useFavoritesStore } from '../stores/favoritesStore';
 import { MainTabNavigationProp, MenuItem } from '../types';
 import { palette, shadows } from '../theme';
-import { getDefaultPickupTime, getLunchRushInfo } from '../utils/pickupTime';
+import { formatPickupTime, getDefaultPickupTime, getLunchRushInfo } from '../utils/pickupTime';
 
 const categories = [
   { key: 'All', label: 'All' },
@@ -163,7 +163,9 @@ export default function HomeScreen() {
           </View>
           <View style={styles.infoHint}>
             <AppIcon name="clock" size={12} color={palette.muted} />
-            <Text style={styles.infoHintText}>Quick pickup from {getDefaultPickupTime()}</Text>
+            <Text style={styles.infoHintText}>
+              Quick pickup from {formatPickupTime(getDefaultPickupTime())}
+            </Text>
           </View>
         </View>
 

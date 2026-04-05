@@ -46,7 +46,7 @@ export default function GoogleCollegeSelectScreen({
   navigation,
   route,
 }: RootStackScreenProps<'GoogleCollegeSelect'>) {
-  const { email, idToken, name, picture } = route.params;
+  const { accessToken, email, idToken, name, picture } = route.params;
   const [selectedCollege, setSelectedCollege] = useState<College>(route.params.selectedCollege ?? 'DSCE');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -58,6 +58,7 @@ export default function GoogleCollegeSelectScreen({
 
     try {
       const response = await authApi.googleCompleteSignup({
+        accessToken,
         idToken,
         college: selectedCollege,
       });
