@@ -36,6 +36,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  expoPushToken: {
+    type: String,
+    default: null,
+    trim: true,
+  },
   passwordHash: {
     type: String,
     required: false,
@@ -80,7 +85,6 @@ userSchema.methods.incrementLoginAttempts = async function() {
   await this.save();
 };
 
-userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ usn: 1, college: 1 }, { unique: true });
 
 export const User = mongoose.model('User', userSchema);
@@ -147,6 +151,54 @@ refreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const RefreshToken = mongoose.model('RefreshToken', refreshTokenSchema);
 
+const notificationLogSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    enum: ['broadcast', 'daily_special', 'rush_warning'],
+    required: true,
+  },
+  title: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 120,
+  },
+  body: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 300,
+  },
+  college: {
+    type: String,
+    enum: supportedCollegeValues,
+    trim: true,
+    default: DEFAULT_COLLEGE,
+  },
+  recipientCount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  senderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  menuItemId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'MenuItem',
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+notificationLogSchema.index({ college: 1, createdAt: -1 });
+
+export const NotificationLog = mongoose.model('NotificationLog', notificationLogSchema);
+
 // MenuItem Schema
 const menuItemSchema = new mongoose.Schema({
   name: {
@@ -191,6 +243,23 @@ const menuItemSchema = new mongoose.Schema({
   isFeatured: {
     type: Boolean,
     default: false,
+  },
+  averageRating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5,
+  },
+  totalReviews: {
+    type: Number,
+    default: 0,
+  },
+  ratingBreakdown: {
+    '1': { type: Number, default: 0 },
+    '2': { type: Number, default: 0 },
+    '3': { type: Number, default: 0 },
+    '4': { type: Number, default: 0 },
+    '5': { type: Number, default: 0 },
   },
   preparationMinutes: {
     type: Number,
@@ -321,7 +390,78 @@ const orderSchema = new mongoose.Schema({
 orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ college: 1, createdAt: -1 });
-orderSchema.index({ razorpayOrderId: 1 }, { sparse: true });
 orderSchema.index({ qrTokenHash: 1 }, { sparse: true });
 
 export const Order = mongoose.model('Order', orderSchema);
+
+const reviewSchema = new mongoose.Schema({
+  menuItemId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'MenuItem',
+    required: true,
+  },
+  orderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Order',
+    required: true,
+  },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  college: {
+    type: String,
+    enum: supportedCollegeValues,
+    trim: true,
+    default: DEFAULT_COLLEGE,
+  },
+  rating: {
+    type: Number,
+    required: true,
+    min: 1,
+    max: 5,
+  },
+  title: {
+    type: String,
+    trim: true,
+    maxlength: 100,
+    default: '',
+  },
+  body: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    default: '',
+  },
+  tags: {
+    type: [String],
+    default: [],
+  },
+  images: {
+    type: [String],
+    default: [],
+  },
+  helpful: {
+    type: Number,
+    default: 0,
+  },
+  isVerified: {
+    type: Boolean,
+    default: true,
+  },
+  isVisible: {
+    type: Boolean,
+    default: true,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+reviewSchema.index({ orderId: 1, menuItemId: 1, userId: 1 }, { unique: true });
+reviewSchema.index({ menuItemId: 1, isVisible: 1, createdAt: -1 });
+reviewSchema.index({ college: 1, createdAt: -1 });
+
+export const Review = mongoose.model('Review', reviewSchema);

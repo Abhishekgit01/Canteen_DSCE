@@ -15,6 +15,7 @@ type FoodCardProps = {
   quantity?: number;
   compact?: boolean;
   onPress?: () => void;
+  onPressRating?: () => void;
   onAdd?: () => void;
   onIncrement?: () => void;
   onDecrement?: () => void;
@@ -28,6 +29,7 @@ export default function FoodCard({
   quantity = 0,
   compact = false,
   onPress,
+  onPressRating,
   onAdd,
   onIncrement,
   onDecrement,
@@ -82,6 +84,20 @@ export default function FoodCard({
           <Text style={styles.description} numberOfLines={2}>
             {item.description}
           </Text>
+          {item.totalReviews > 0 ? (
+            <TouchableOpacity
+              activeOpacity={onPressRating ? 0.82 : 1}
+              style={styles.ratingRow}
+              onPress={onPressRating}
+              disabled={!onPressRating}
+            >
+              <AppIcon name="star" size={12} color={palette.accent} />
+              <Text style={styles.ratingValue}>{item.averageRating.toFixed(1)}</Text>
+              <Text style={styles.ratingCount}>({item.totalReviews} reviews)</Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.noRating}>No reviews yet</Text>
+          )}
           <View style={styles.priceRow}>
             <Text style={styles.price}>₹{item.price}</Text>
             <Text style={styles.metaText}>{item.tempOptions.length || 1} temp options</Text>
@@ -189,6 +205,27 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontSize: 13,
     lineHeight: 19,
+    marginBottom: 10,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  ratingValue: {
+    color: palette.ink,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  ratingCount: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  noRating: {
+    color: palette.subtle,
+    fontSize: 12,
     marginBottom: 12,
   },
   priceRow: {

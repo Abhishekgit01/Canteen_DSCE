@@ -15,6 +15,8 @@ export default function Layout({ children }: { children?: React.ReactNode }) {
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', roles: ['manager', 'admin'] },
     { path: '/menu', label: 'Menu', roles: ['manager', 'admin'] },
+    { path: '/notifications', label: 'Notifications', roles: ['manager', 'admin'] },
+    { path: '/reviews', label: 'Reviews', roles: ['manager', 'admin'] },
     { path: '/rush-hours', label: 'Rush Hours', roles: ['manager', 'admin'] },
     { path: '/orders', label: 'Orders', roles: ['staff', 'manager', 'admin'] },
     { path: '/users', label: 'Users', roles: ['admin'] },

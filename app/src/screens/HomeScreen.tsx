@@ -121,6 +121,34 @@ export default function HomeScreen() {
       : menuItems.filter((item) => item.category === selectedCategory);
 
   const cartCount = items.reduce((sum, item) => sum + item.quantity, 0);
+  const now = new Date();
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const currentRushHour = rushHourStatus?.current || null;
+  const upcomingRushHour =
+    currentRushHour ||
+    rushHourStatus?.all.find((entry) => entry.startTime >= currentTime) ||
+    rushHourStatus?.all[0] ||
+    null;
+  const heroTitle = currentRushHour?.label || upcomingRushHour?.label || 'Lunch Rush';
+  const heroSubtitle = currentRushHour
+    ? currentRushHour.message
+    : upcomingRushHour
+      ? `${upcomingRushHour.message} · ${formatPickupTime(upcomingRushHour.startTime)} to ${formatPickupTime(
+          upcomingRushHour.endTime,
+        )}`
+      : rushInfo.subtitle;
+  const heroTimerValue = currentRushHour
+    ? currentRushHour.surchargePercent > 0
+      ? `+${currentRushHour.surchargePercent}%`
+      : 'LIVE'
+    : upcomingRushHour
+      ? formatPickupTime(upcomingRushHour.startTime)
+      : rushInfo.formattedTime;
+  const heroTimerLabel = currentRushHour
+    ? `${formatPickupTime(currentRushHour.startTime)} - ${formatPickupTime(currentRushHour.endTime)}`
+    : upcomingRushHour
+      ? `Till ${formatPickupTime(upcomingRushHour.endTime)}`
+      : rushInfo.label;
 
   const getQuantity = (menuItemId: string) =>
     items.find((entry) => entry.menuItem.id === menuItemId)?.quantity || 0;
@@ -178,16 +206,16 @@ export default function HomeScreen() {
           <View style={styles.heroTextBlock}>
             <View style={styles.heroTitleRow}>
               <AppIcon name="fire" size={18} color="#FFE3B1" />
-            <Text style={styles.heroTitle}>Lunch Rush</Text>
+              <Text style={styles.heroTitle}>{heroTitle}</Text>
             </View>
             <Text style={styles.heroSubtitle}>
-              {rushInfo.subtitle}
+              {heroSubtitle}
             </Text>
           </View>
 
           <View style={styles.heroTimer}>
-            <Text style={styles.heroTimerValue}>{rushInfo.formattedTime}</Text>
-            <Text style={styles.heroTimerLabel}>{rushInfo.label}</Text>
+            <Text style={styles.heroTimerValue}>{heroTimerValue}</Text>
+            <Text style={styles.heroTimerLabel}>{heroTimerLabel}</Text>
           </View>
         </View>
 
@@ -204,17 +232,24 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {rushHourStatus?.isRushHour && rushHourStatus.current ? (
+        {upcomingRushHour ? (
           <View style={styles.rushBanner}>
             <View style={styles.rushBannerIcon}>
               <AppIcon name="clock" size={16} color={palette.surface} />
             </View>
             <View style={styles.rushBannerCopy}>
-              <Text style={styles.rushBannerTitle}>{rushHourStatus.current.label}</Text>
-              <Text style={styles.rushBannerText}>{rushHourStatus.current.message}</Text>
-              {rushHourStatus.current.surchargePercent > 0 ? (
+              <Text style={styles.rushBannerTitle}>
+                {currentRushHour ? 'Rush Hour Active' : 'Upcoming Rush Hour'}
+              </Text>
+              <Text style={styles.rushBannerText}>
+                {upcomingRushHour.label} · {formatPickupTime(upcomingRushHour.startTime)} to{' '}
+                {formatPickupTime(upcomingRushHour.endTime)}
+              </Text>
+              <Text style={styles.rushBannerText}>{upcomingRushHour.message}</Text>
+              {upcomingRushHour.surchargePercent > 0 ? (
                 <Text style={styles.rushBannerSurcharge}>
-                  +{rushHourStatus.current.surchargePercent}% busy-hour charge is active right now.
+                  +{upcomingRushHour.surchargePercent}% busy-hour charge
+                  {currentRushHour ? ' is active right now.' : ' will apply in this window.'}
                 </Text>
               ) : null}
             </View>
@@ -301,6 +336,12 @@ export default function HomeScreen() {
               item={item}
               quantity={getQuantity(item.id)}
               onPress={() => navigation.navigate('ItemDetail', { item })}
+              onPressRating={() =>
+                navigation.navigate('ItemReviews', {
+                  menuItemId: item.id,
+                  menuItemName: item.name,
+                })
+              }
               onAdd={() => void handleAdd(item)}
               onIncrement={() => void handleAdd(item)}
               onDecrement={() => void handleQuantityChange(item, -1)}

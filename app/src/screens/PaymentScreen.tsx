@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   View,
   Text,
   StyleSheet,
@@ -18,7 +19,6 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import RazorpayCheckout from 'react-native-razorpay';
 import { orderApi, paymentApi } from '../api';
 import { connectSocket } from '../api/socket';
-import CatLoader from '../components/CatLoader';
 import { formatPayeeName, getCanteenName } from '../constants/colleges';
 import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
@@ -390,7 +390,7 @@ export default function PaymentScreen() {
 
     return (
       <View style={styles.statusContainer}>
-        <CatLoader size="small" />
+        <ActivityIndicator size="small" color="#f97316" />
         <Text style={styles.statusText}>{statusMessage || 'Processing...'}</Text>
       </View>
     );

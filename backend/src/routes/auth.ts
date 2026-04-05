@@ -206,6 +206,21 @@ const getSignupErrorMessage = (error: unknown) => {
   return 'Signup failed';
 };
 
+const getExistingSignupConflictMessage = (options: {
+  emailInUse?: boolean;
+  usnInUse?: boolean;
+}) => {
+  if (options.emailInUse) {
+    return 'That email address is already in use. Login instead or use Forgot password.';
+  }
+
+  if (options.usnInUse) {
+    return 'That USN is already linked to an account. Try the email used for that account or contact support if this looks wrong.';
+  }
+
+  return 'Account already exists. Login instead or use Forgot password.';
+};
+
 const createAndQueueOtp = async ({
   user,
   email,
@@ -441,26 +456,46 @@ router.post('/signup', async (req: Request, res: Response) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const existingUser = await User.findOne({ $or: [{ email: normalizedEmail }, { usn: resolvedUsn }] }).select(
+    const existingUserByEmail = await User.findOne({ email: normalizedEmail }).select(
+      '+passwordHash',
+    );
+    const existingUserByUsn = await User.findOne({ usn: resolvedUsn, college }).select(
       '+passwordHash',
     );
 
-    if (existingUser?.isVerified) {
+    const emailInUse = Boolean(existingUserByEmail?.isVerified);
+    const usnInUse = Boolean(
+      existingUserByUsn?.isVerified &&
+        String(existingUserByUsn.email || '').trim().toLowerCase() !== normalizedEmail,
+    );
+
+    if (emailInUse || usnInUse) {
       return res.status(400).json({
-        error: 'Account already exists. Login instead or use Forgot password.',
+        error: getExistingSignupConflictMessage({ emailInUse, usnInUse }),
       });
     }
 
-    let user = existingUser;
+    if (
+      existingUserByEmail &&
+      existingUserByUsn &&
+      String(existingUserByEmail._id) !== String(existingUserByUsn._id)
+    ) {
+      return res.status(409).json({
+        error:
+          'This email and USN are already tied to different pending accounts. Please use another email or contact support.',
+      });
+    }
 
-    if (existingUser) {
-      existingUser.name = resolvedName;
-      existingUser.usn = resolvedUsn;
-      existingUser.email = normalizedEmail;
-      existingUser.passwordHash = passwordHash;
-      existingUser.college = college;
-      existingUser.isVerified = false;
-      await existingUser.save();
+    let user = existingUserByEmail || existingUserByUsn;
+
+    if (user) {
+      user.name = resolvedName;
+      user.usn = resolvedUsn;
+      user.email = normalizedEmail;
+      user.passwordHash = passwordHash;
+      user.college = college;
+      user.isVerified = false;
+      await user.save();
     } else {
       user = new User({
         name: resolvedName,
@@ -642,13 +677,31 @@ router.post('/forgot-password/request', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'No account found with that email address' });
     }
 
-    if (!user.isVerified) {
-      return res.status(400).json({ error: 'Verify your account first before resetting the password' });
-    }
-
     const otpCooldownMessage = getOtpCooldownMessage(user.otpSentAt);
     if (otpCooldownMessage) {
       return res.status(429).json({ error: otpCooldownMessage });
+    }
+
+    if (!user.isVerified) {
+      await OTP.deleteMany({ email: normalizedEmail, purpose: 'signup' });
+
+      try {
+        await createAndQueueOtp({
+          user,
+          email: normalizedEmail,
+          name: user.name,
+          purpose: 'signup',
+          college: user.college,
+        });
+      } catch (error) {
+        console.error('Unverified account OTP error:', error);
+        return res.status(503).json({ error: getOtpRequestErrorMessage(error) });
+      }
+
+      return res.json({
+        message: 'Your account is not verified yet, so we sent a verification OTP instead.',
+        purpose: 'signup',
+      });
     }
 
     await OTP.deleteMany({ email: normalizedEmail, purpose: 'password_reset' });
@@ -666,7 +719,7 @@ router.post('/forgot-password/request', async (req: Request, res: Response) => {
       return res.status(503).json({ error: getOtpRequestErrorMessage(error) });
     }
 
-    return res.json({ message: 'Password reset OTP sent' });
+    return res.json({ message: 'Password reset OTP sent', purpose: 'password_reset' });
   } catch (error) {
     console.error('Forgot password request error:', error);
     return res.status(500).json({ error: 'Failed to send password reset OTP' });

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '../types';
+import { API_BASE } from '../api/config';
 
 interface AuthState {
   user: User | null;
@@ -11,7 +12,7 @@ interface AuthState {
   loadAuth: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
   isLoading: true,
@@ -21,6 +22,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ user, token });
   },
   logout: async () => {
+    const token = get().token;
+    if (token) {
+      await fetch(`${API_BASE}/notifications/token`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }).catch(() => undefined);
+    }
+
     await AsyncStorage.removeItem('token');
     await AsyncStorage.removeItem('user');
     set({ user: null, token: null });

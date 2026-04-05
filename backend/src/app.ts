@@ -12,7 +12,9 @@ import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
 import adminRoutes from './routes/admin.js';
+import reviewsRoutes from './routes/reviews.js';
 import rushHoursRoutes from './routes/rushHours.js';
+import notificationsRoutes from './routes/notifications.js';
 
 const app = express();
 
@@ -166,6 +168,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/reviews', reviewsRoutes);
 app.use('/api/rush-hours', rushHoursRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 export default app;

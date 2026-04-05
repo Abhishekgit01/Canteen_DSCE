@@ -76,3 +76,23 @@ export const rushHoursApi = {
   updateRushHour: (id: string, data: any) => api.patch(`/rush-hours/${id}`, data),
   deleteRushHour: (id: string) => api.delete(`/rush-hours/${id}`),
 };
+
+export const notificationsApi = {
+  getHistory: (college?: string) =>
+    api.get('/notifications/history', { params: college ? { college } : {} }),
+  broadcast: (data: {
+    title: string;
+    body: string;
+    college?: string;
+    type?: 'broadcast' | 'rush_warning';
+  }) => api.post('/notifications/broadcast', data),
+  announceDailySpecial: (menuItemId: string) =>
+    api.post('/notifications/daily-special', { menuItemId }),
+};
+
+export const reviewsApi = {
+  getAll: (params?: { college?: string; menuItemId?: string; isVisible?: boolean }) =>
+    api.get('/reviews/admin', { params }).then((response) => response.data),
+  toggleVisibility: (id: string, isVisible: boolean) =>
+    api.patch(`/reviews/${id}/visibility`, { isVisible }).then((response) => response.data),
+};

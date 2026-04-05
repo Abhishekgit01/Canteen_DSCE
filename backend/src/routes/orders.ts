@@ -7,6 +7,10 @@ import { io } from '../server.js';
 import { MenuItem, Order, User } from '../models/index.js';
 import { createRazorpayOrder, initiatePayment } from '../services/payment.service.js';
 import { finalizeOrder, finalizePaidOrder } from '../services/order-payment.service.js';
+import {
+  NotificationTemplates,
+  sendPushNotification,
+} from '../services/notification.service.js';
 import { serializeOrder } from '../utils/order.utils.js';
 import { getPaymentMode, PaymentMode } from '../utils/paymentMode.js';
 import { isPickupTimeAllowed } from '../utils/pickupTime.js';
@@ -567,6 +571,32 @@ router.post(
         orderId: String(order._id),
         status: 'fulfilled',
       });
+
+      const student = await User.findById(order.userId).select('expoPushToken').lean();
+      if (student?.expoPushToken) {
+        const template = NotificationTemplates.orderFulfilled(String(order._id));
+        sendPushNotification(
+          student.expoPushToken,
+          template.title,
+          template.body,
+          template.data,
+        ).catch((error) => console.error('Order fulfilled push failed:', error));
+
+        setTimeout(async () => {
+          const freshStudent = await User.findById(order.userId).select('expoPushToken').lean();
+          if (!freshStudent?.expoPushToken) {
+            return;
+          }
+
+          const reminder = NotificationTemplates.rateReminder(String(order._id));
+          sendPushNotification(
+            freshStudent.expoPushToken,
+            reminder.title,
+            reminder.body,
+            reminder.data,
+          ).catch((error) => console.error('Rate reminder push failed:', error));
+        }, 30 * 60 * 1000);
+      }
 
       io.to('staff').emit('order:update', { order: serializeOrder(order) });
 

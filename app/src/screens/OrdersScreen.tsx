@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -10,10 +11,9 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { orderApi } from '../api';
+import { orderApi, reviewsApi } from '../api';
 import AppIcon from '../components/AppIcon';
-import CatLoader from '../components/CatLoader';
-import { MainTabNavigationProp, Order } from '../types';
+import { MainTabNavigationProp, Order, PendingReviewItem } from '../types';
 import { palette, shadows } from '../theme';
 
 function getErrorMessage(error: any) {
@@ -44,19 +44,28 @@ export default function OrdersScreen() {
   const [loading, setLoading] = useState(true);
   const [openingOrderId, setOpeningOrderId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [pendingReviewCounts, setPendingReviewCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    void fetchOrders();
+    void fetchOrdersAndPending();
   }, []);
 
-  const fetchOrders = async () => {
+  const fetchOrdersAndPending = async () => {
     try {
       setErrorMessage('');
-      const response = await orderApi.getMyOrders();
-      const sortedOrders = [...response.data].sort(
+      const [ordersResponse, pendingResponse] = await Promise.all([
+        orderApi.getMyOrders(),
+        reviewsApi.getPendingReviews().catch(() => [] as PendingReviewItem[]),
+      ]);
+      const sortedOrders = [...ordersResponse.data].sort(
         (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
       );
       setOrders(sortedOrders);
+      const counts = pendingResponse.reduce<Record<string, number>>((accumulator, item) => {
+        accumulator[item.orderId] = (accumulator[item.orderId] || 0) + 1;
+        return accumulator;
+      }, {});
+      setPendingReviewCounts(counts);
     } catch (error) {
       console.error('Failed to fetch orders:', error);
       setErrorMessage(getErrorMessage(error));
@@ -102,7 +111,7 @@ export default function OrdersScreen() {
           { paddingTop: insets.top + 12, paddingBottom: 110 + insets.bottom },
         ]}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={fetchOrders} tintColor={palette.accent} />
+          <RefreshControl refreshing={loading} onRefresh={fetchOrdersAndPending} tintColor={palette.accent} />
         }
         ListHeaderComponent={
           <View style={styles.header}>
@@ -114,7 +123,8 @@ export default function OrdersScreen() {
         ListEmptyComponent={
           loading ? (
             <View style={styles.emptyState}>
-              <CatLoader message="Fetching your orders..." />
+              <ActivityIndicator size="large" color={palette.accent} />
+              <Text style={styles.loadingText}>Fetching your orders...</Text>
             </View>
           ) : (
             <View style={styles.emptyState}>
@@ -133,6 +143,7 @@ export default function OrdersScreen() {
           const statusTheme = getStatusTheme(item.status);
           const itemSummary = item.items.map((entry) => `${entry.quantity}x ${entry.name}`).join(' · ');
           const interactive = ['paid', 'preparing', 'ready'].includes(item.status);
+          const pendingReviewCount = pendingReviewCounts[item.id] || 0;
 
           return (
             <TouchableOpacity
@@ -167,7 +178,7 @@ export default function OrdersScreen() {
 
                 {openingOrderId === item.id ? (
                   <View style={styles.loadingRow}>
-                    <CatLoader size="small" />
+                    <ActivityIndicator size="small" color={palette.accent} />
                     <Text style={styles.actionText}>Opening QR...</Text>
                   </View>
                 ) : interactive ? (
@@ -175,6 +186,16 @@ export default function OrdersScreen() {
                     <Text style={styles.actionText}>Open pickup QR</Text>
                     <AppIcon name="chevron-right" size={18} color={palette.accent} />
                   </View>
+                ) : item.status === 'fulfilled' && pendingReviewCount > 0 ? (
+                  <TouchableOpacity
+                    activeOpacity={0.86}
+                    style={styles.reviewButton}
+                    onPress={() => navigation.navigate('RateOrder', { orderId: item.id })}
+                  >
+                    <Text style={styles.reviewButtonText}>
+                      Rate meal ({pendingReviewCount})
+                    </Text>
+                  </TouchableOpacity>
                 ) : (
                   <Text style={styles.secondaryAction}>
                     {item.status === 'fulfilled' ? 'Collected successfully' : 'Awaiting update'}
@@ -278,6 +299,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
+  reviewButton: {
+    backgroundColor: palette.surfaceRaised,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  reviewButtonText: {
+    color: palette.accent,
+    fontSize: 13,
+    fontWeight: '800',
+  },
   actionText: {
     color: palette.accent,
     fontSize: 13,
@@ -299,6 +331,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingTop: 60,
     gap: 12,
+  },
+  loadingText: {
+    color: palette.muted,
+    fontSize: 14,
+    fontWeight: '600',
   },
   emptyIcon: {
     width: 72,

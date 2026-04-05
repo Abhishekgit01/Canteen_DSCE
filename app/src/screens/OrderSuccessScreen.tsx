@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  ActivityIndicator,
   View,
   Text,
   StyleSheet,
@@ -15,7 +16,6 @@ import Animated, {
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { orderApi } from '../api';
 import AppIcon from '../components/AppIcon';
-import CatLoader from '../components/CatLoader';
 import { RootStackNavigationProp, RootStackRouteProp } from '../types';
 
 export default function OrderSuccessScreen() {
@@ -70,7 +70,8 @@ export default function OrderSuccessScreen() {
 
       {loading ? (
         <View style={styles.loaderWrap}>
-          <CatLoader message="Pulling together your order details..." />
+          <ActivityIndicator size="large" color="#f97316" />
+          <Text style={styles.loaderText}>Pulling together your order details...</Text>
         </View>
       ) : order ? (
         <Animated.View style={[styles.detailsCard, animatedItems]}>
@@ -144,6 +145,13 @@ const styles = StyleSheet.create({
   },
   loaderWrap: {
     marginTop: 20,
+    alignItems: 'center',
+    gap: 12,
+  },
+  loaderText: {
+    color: '#8892a4',
+    fontSize: 14,
+    textAlign: 'center',
   },
   detailsTitle: {
     color: '#f97316',

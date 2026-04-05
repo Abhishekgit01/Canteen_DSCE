@@ -1,11 +1,11 @@
-## PROMPT — Fix OTP + Admin Rush Hours + Per-College Menu + Chef Notes
+## PROMPT — Smart Notifications + Rate Your Meal + Public Reviews
 
 Copy into a fresh conversation:
 
 ---
 
 > **READ EVERYTHING BEFORE WRITING A SINGLE LINE OF CODE.**
-> Do not touch payment, webhook, QR, socket events, or Razorpay integration.
+> Do not touch payment, webhook, QR, Razorpay, rush hours, or chef notes.
 > Show diff before every change. Never touch .env files.
 >
 > ---
@@ -13,851 +13,1229 @@ Copy into a fresh conversation:
 > ## FIRST — READ THESE FILES
 >
 > ```bash
-> # OTP diagnosis
-> cat backend/src/routes/auth.ts
-> cat backend/src/services/email.service.ts 2>/dev/null || echo "MISSING"
-> grep -rn "resend\|nodemailer\|sendMail\|OTP\|otp" backend/src/ --include="*.ts"
-> grep "RESEND\|OTP_MODE\|EMAIL" backend/.env.example
+> # Models
+> cat backend/src/models/Order.ts
+> cat backend/src/models/MenuItem.ts
+> cat backend/src/models/User.ts
 >
-> # Check if resend is installed
-> grep "resend" backend/package.json
+> # Routes
+> cat backend/src/routes/orders.ts
+> cat backend/src/routes/menu.ts
+> cat backend/src/routes/admin.ts
 >
-> # Admin panel
+> # Mobile
+> cat app/src/screens/OrdersScreen.tsx
+> cat app/src/screens/MenuScreen.tsx
+> cat app/src/api/index.ts
+> cat app/src/stores/authStore.ts
+> cat app/app.json
+>
+> # Admin
 > cat admin/src/api/index.ts
 > cat admin/src/App.tsx
 > find admin/src/pages -name "*.tsx" -exec echo "=== {} ===" \; -exec cat {} \;
 >
-> # Mobile screens
-> cat app/src/screens/MenuScreen.tsx
-> cat app/src/screens/CartScreen.tsx
-> cat app/src/api/index.ts
+> # Check what notification packages exist
+> grep -rn "expo-notifications\|push\|FCM\|firebase" \
+>   app/package.json app/app.json
 >
-> # Models
-> cat backend/src/models/MenuItem.ts
-> cat backend/src/models/Order.ts
-> cat backend/src/models/User.ts
+> # Check backend package.json
+> cat backend/package.json
 >
-> # Routes
-> cat backend/src/routes/menu.ts
-> cat backend/src/routes/orders.ts
-> cat backend/src/routes/admin.ts
->
-> # Check college enum everywhere
-> grep -rn "DSCE\|DSATM\|NIE\|college\|enum" \
->   backend/src/models/ --include="*.ts"
->
-> # Vercel config
-> cat admin/vercel.json
+> # Server
+> cat backend/src/server.ts
+> cat backend/src/app.ts
 > ```
 >
 > Say "FILES READ" then proceed.
 >
 > ---
 >
-> # FIX 1 — OTP DIAGNOSIS AND FIX
+> # FEATURE 1 — SMART PUSH NOTIFICATIONS
 >
-> **Run this FIRST and show me every output:**
-> ```bash
-> # Is resend installed?
-> node -e "require('resend'); console.log('resend OK')" 2>/dev/null \
->   || echo "resend NOT installed"
+> ## Backend — Push Token Storage
 >
-> # Is API key set?
-> cd backend && node -e "
-> require('dotenv').config()
-> console.log('RESEND_API_KEY:', process.env.RESEND_API_KEY
->   ? 'SET (' + process.env.RESEND_API_KEY.slice(0,8) + '...)'
->   : 'MISSING')
-> console.log('OTP_MODE:', process.env.OTP_MODE || 'not set')
-> "
->
-> # Does email service exist and use resend?
-> cat backend/src/services/email.service.ts 2>/dev/null || echo "FILE MISSING"
->
-> # Is nodemailer still lurking?
-> grep -rn "nodemailer\|createTransport\|smtp" backend/src/ --include="*.ts"
->
-> # How is OTP currently being sent in auth.ts?
-> grep -n "sendMail\|sendOTP\|email.service\|otp\|OTP" backend/src/routes/auth.ts
->
-> # Test Resend API key live right now
-> cd backend && node -e "
-> require('dotenv').config()
-> const { Resend } = require('resend')
-> const resend = new Resend(process.env.RESEND_API_KEY)
-> resend.emails.send({
->   from: 'onboarding@resend.dev',
->   to: 'delivered@resend.dev',
->   subject: 'OTP Test',
->   html: '<p>Test OTP: 123456</p>'
-> }).then(r => console.log('Resend test OK:', JSON.stringify(r)))
->   .catch(e => console.log('Resend test FAILED:', e.message))
-> "
-> ```
->
-> Based on what you find, apply the correct fix:
->
-> **CASE A — resend package missing:**
-> ```bash
-> cd backend && npm install resend
-> ```
->
-> **CASE B — RESEND_API_KEY missing:**
-> Tell me: "Please add RESEND_API_KEY to backend/.env
-> Get it from resend.com → API Keys → Create Key"
-> Stop and wait for me to confirm.
->
-> **CASE C — email.service.ts missing or wrong:**
-> Create/replace it entirely:
+> **Update `backend/src/models/User.ts`:**
 > ```ts
-> import { Resend } from 'resend'
+> // Add push token field
+> expoPushToken: {
+>   type: String,
+>   default: null,
+>   trim: true
+> }
+> ```
 >
-> if (!process.env.RESEND_API_KEY) {
->   console.error('RESEND_API_KEY missing — OTP emails will fail')
+> **Create `backend/src/services/notification.service.ts`:**
+> ```ts
+> // Uses Expo Push Notification API — completely free
+> // No Firebase setup needed, works directly with Expo
+>
+> interface PushMessage {
+>   to: string           // Expo push token
+>   title: string
+>   body: string
+>   data?: object        // extra data sent to app
+>   sound?: 'default' | null
+>   badge?: number
+>   categoryId?: string  // for actionable notifications
 > }
 >
-> const resend = new Resend(process.env.RESEND_API_KEY!)
+> const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
 >
-> export async function sendOTPEmail(
->   toEmail: string,
->   toName: string,
->   otp: string,
->   college?: string
-> ): Promise<{ success: boolean; error?: string }> {
+> export async function sendPushNotification(
+>   token: string,
+>   title: string,
+>   body: string,
+>   data?: object
+> ): Promise<void> {
+>   if (!token || !token.startsWith('ExponentPushToken')) {
+>     console.warn('Invalid push token:', token)
+>     return
+>   }
+>
+>   const message: PushMessage = {
+>     to: token,
+>     title,
+>     body,
+>     sound: 'default',
+>     data: data ?? {}
+>   }
+>
 >   try {
->     const { error } = await resend.emails.send({
->       from: 'Canteen App <onboarding@resend.dev>',
->       to: toEmail,
->       subject: `${otp} — Your Canteen Verification Code`,
->       html: `
->         <div style="font-family:Arial,sans-serif;max-width:480px;
->                     margin:0 auto;padding:40px 32px;
->                     background:#fff;border-radius:16px;">
->           <div style="text-align:center;margin-bottom:32px;">
->             <h1 style="color:#00C853;margin:0;font-size:28px;">
->               🍱 ${college ? college + ' ' : ''}Canteen
->             </h1>
->           </div>
->           <p style="color:#333;font-size:16px;">Hi ${toName},</p>
->           <p style="color:#333;">Your one-time verification code is:</p>
->           <div style="background:#F8FFF8;border:2px solid #00C853;
->                       border-radius:16px;padding:32px;
->                       text-align:center;margin:24px 0;">
->             <span style="font-size:48px;font-weight:800;
->                          letter-spacing:16px;color:#00C853;">
->               ${otp}
->             </span>
->           </div>
->           <p style="color:#666;font-size:14px;text-align:center;">
->             ⏱ Expires in <strong>10 minutes</strong>
->           </p>
->           <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
->           <p style="color:#999;font-size:12px;text-align:center;">
->             Didn't request this? Ignore this email safely.
->           </p>
->         </div>
->       `
+>     const response = await fetch(EXPO_PUSH_URL, {
+>       method: 'POST',
+>       headers: {
+>         'Content-Type': 'application/json',
+>         'Accept': 'application/json'
+>       },
+>       body: JSON.stringify(message)
 >     })
->     if (error) {
->       console.error('Resend send error:', error)
->       return { success: false, error: error.message }
+>     const result = await response.json()
+>     if (result.data?.status === 'error') {
+>       console.error('Push notification error:', result.data.message)
 >     }
->     return { success: true }
 >   } catch (err: any) {
->     console.error('Resend exception:', err.message)
->     return { success: false, error: err.message }
+>     console.error('Push notification failed:', err.message)
 >   }
 > }
-> ```
 >
-> **CASE D — OTP send is blocking the response (most likely cause of timeout):**
+> // Send to multiple tokens at once (batch)
+> export async function sendBulkPushNotification(
+>   tokens: string[],
+>   title: string,
+>   body: string,
+>   data?: object
+> ): Promise<void> {
+>   const validTokens = tokens.filter(t =>
+>     t && t.startsWith('ExponentPushToken')
+>   )
+>   if (validTokens.length === 0) return
 >
-> Find in `auth.ts` every place OTP email is sent.
-> It MUST be non-blocking. Change from:
-> ```ts
-> // WRONG — user waits for email before getting response
-> await sendOTPEmail(email, name, otp, college)
-> return res.json({ message: 'OTP sent' })
-> ```
-> To:
-> ```ts
-> // CORRECT — respond instantly, email sends in background
-> sendOTPEmail(email, name, otp, college).then(result => {
->   if (!result.success) {
->     console.error('OTP email failed for:', email, result.error)
->     // In dev, log OTP to console as fallback
->     if (process.env.NODE_ENV !== 'production') {
->       console.log(`[DEV] OTP for ${email}: ${otp}`)
->     }
+>   // Expo supports up to 100 per batch
+>   const batches = []
+>   for (let i = 0; i < validTokens.length; i += 100) {
+>     batches.push(validTokens.slice(i, i + 100))
 >   }
-> })
-> return res.json({ message: 'OTP sent to your email' })
-> ```
 >
-> **CASE E — OTP_MODE is set to 'auto' or 'none':**
-> If `OTP_MODE` is set to anything other than `email`, that bypasses email.
-> Check the logic in auth.ts that reads `OTP_MODE`.
-> Make sure `email` mode actually calls `sendOTPEmail`.
->
-> **After all fixes — test live:**
-> ```bash
-> cd backend && npm run dev &
-> sleep 5
->
-> # Signup and trigger OTP
-> curl -X POST http://localhost:4000/api/auth/signup \
->   -H "Content-Type: application/json" \
->   -d '{
->     "email": "test@youremail.com",
->     "password": "Test@1234",
->     "usn": "1DS21CS001",
->     "phone": "9999999999",
->     "college": "DSCE",
->     "name": "Test User"
->   }'
->
-> # Should respond in under 1 second with { message: "OTP sent" }
-> # Check your email within 30 seconds
-> ```
->
-> Report: response time in ms + whether email arrived.
->
-> ---
->
-> # FIX 2 — RUSH HOURS FEATURE
->
-> ## Backend
->
-> **Create `backend/src/models/RushHour.ts`:**
-> ```ts
-> import mongoose, { Schema, Document } from 'mongoose'
->
-> export interface IRushHour extends Document {
->   college: string
->   dayOfWeek: number[]    // 0=Sun, 1=Mon ... 6=Sat
->   startTime: string      // "12:00" 24hr format
->   endTime: string        // "14:00"
->   label: string          // "Lunch Rush", "Breakfast Rush"
->   surchargePercent: number  // 0 = no surcharge, 10 = 10% extra
->   isActive: boolean
->   message: string        // shown to student e.g. "Busy hours — 15 min wait"
->   createdBy: mongoose.Types.ObjectId
->   updatedAt: Date
-> }
->
-> const RushHourSchema = new Schema<IRushHour>({
->   college:         { type: String, required: true, enum: ['DSCE','DSATM','NIE'] },
->   dayOfWeek:       { type: [Number], required: true },
->   startTime:       { type: String, required: true },
->   endTime:         { type: String, required: true },
->   label:           { type: String, required: true, trim: true },
->   surchargePercent:{ type: Number, default: 0, min: 0, max: 50 },
->   isActive:        { type: Boolean, default: true },
->   message:         { type: String, default: 'Busy hours — expect slight delays' },
->   createdBy:       { type: Schema.Types.ObjectId, ref: 'User', required: true }
-> }, { timestamps: true })
->
-> export const RushHour = mongoose.model<IRushHour>('RushHour', RushHourSchema)
-> ```
->
-> **Create `backend/src/routes/rushHours.ts`:**
-> ```ts
-> // GET /api/rush-hours?college=DSCE
-> // Returns current rush hour status for a college
-> // Public — mobile app checks this on load
-> router.get('/', async (req, res) => {
->   const { college } = req.query
->   const now = new Date()
->   const currentDay = now.getDay()
->   const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
->
->   const rushHours = await RushHour.find({
->     college,
->     isActive: true,
->     dayOfWeek: currentDay
->   }).lean()
->
->   const activeRush = rushHours.find(r =>
->     currentTime >= r.startTime && currentTime <= r.endTime
+>   const messages = batches.map(batch =>
+>     batch.map(token => ({
+>       to: token, title, body,
+>       sound: 'default',
+>       data: data ?? {}
+>     }))
 >   )
 >
->   return res.json({
->     isRushHour: !!activeRush,
->     current: activeRush ?? null,
->     all: rushHours
+>   await Promise.all(
+>     messages.map(batch =>
+>       fetch(EXPO_PUSH_URL, {
+>         method: 'POST',
+>         headers: { 'Content-Type': 'application/json' },
+>         body: JSON.stringify(batch)
+>       }).catch(err => console.error('Batch push failed:', err.message))
+>     )
+>   )
+> }
+>
+> // Pre-built notification templates
+> export const NotificationTemplates = {
+>   orderPaid: (orderId: string) => ({
+>     title: '✅ Payment Confirmed!',
+>     body: 'Your order is being prepared. We will notify you when ready!',
+>     data: { screen: 'OrderDetail', orderId, type: 'order_paid' }
+>   }),
+>
+>   orderReady: (items: string[]) => ({
+>     title: '🍱 Your Order is Ready!',
+>     body: `${items.slice(0,2).join(', ')}${items.length > 2 ? ` +${items.length-2} more` : ''} — come collect!`,
+>     data: { screen: 'Orders', type: 'order_ready' }
+>   }),
+>
+>   orderFulfilled: () => ({
+>     title: '🎉 Enjoy your meal!',
+>     body: 'Order collected. How was it? Rate your meal!',
+>     data: { screen: 'Orders', type: 'order_fulfilled', showRating: true }
+>   }),
+>
+>   rushHourWarning: (endTime: string, college: string) => ({
+>     title: '⏰ Beat the Rush!',
+>     body: `${college} canteen rush hour ends at ${endTime}. Order now for faster service!`,
+>     data: { screen: 'Menu', type: 'rush_warning' }
+>   }),
+>
+>   dailySpecial: (itemName: string, price: number, college: string) => ({
+>     title: `🌟 Today's Special at ${college}!`,
+>     body: `${itemName} — just ₹${price}. Available while stocks last!`,
+>     data: { screen: 'Menu', type: 'daily_special' }
+>   }),
+>
+>   itemRestocked: (itemName: string) => ({
+>     title: '🔔 Back in Stock!',
+>     body: `${itemName} is available again. Order before it runs out!`,
+>     data: { screen: 'Menu', type: 'restock' }
+>   }),
+>
+>   orderFailed: (orderId: string) => ({
+>     title: '❌ Payment Failed',
+>     body: 'Your payment could not be processed. Please try again.',
+>     data: { screen: 'Cart', orderId, type: 'order_failed' }
+>   }),
+>
+>   rateReminder: (orderId: string) => ({
+>     title: '⭐ How was your meal?',
+>     body: 'Take 10 seconds to rate your food. Your feedback helps!',
+>     data: { screen: 'RateOrder', orderId, type: 'rate_reminder' }
 >   })
+> }
+> ```
+>
+> **Create `backend/src/routes/notifications.ts`:**
+> ```ts
+> // POST /api/notifications/token
+> // Student saves their Expo push token
+> router.post('/token', requireAuth, async (req, res) => {
+>   const { expoPushToken } = req.body
+>   if (!expoPushToken) {
+>     return res.status(400).json({ error: 'Token required' })
+>   }
+>   if (!expoPushToken.startsWith('ExponentPushToken')) {
+>     return res.status(400).json({ error: 'Invalid Expo push token' })
+>   }
+>   await User.findByIdAndUpdate(req.user.id, { expoPushToken })
+>   res.json({ message: 'Push token saved' })
 > })
 >
-> // GET /api/rush-hours/all (admin — see all rush hours for their college)
-> router.get('/all', requireAuth, requireRoles(['staff','manager','admin']),
->   async (req, res) => {
->     const college = req.query.college ?? req.user.college
->     const rushHours = await RushHour.find({ college }).lean()
->     res.json(rushHours)
->   }
-> )
+> // DELETE /api/notifications/token
+> // Clear token on logout
+> router.delete('/token', requireAuth, async (req, res) => {
+>   await User.findByIdAndUpdate(req.user.id, { expoPushToken: null })
+>   res.json({ message: 'Push token cleared' })
+> })
 >
-> // POST /api/rush-hours (admin — create rush hour)
-> router.post('/', requireAuth, requireRoles(['manager','admin']),
+> // POST /api/notifications/broadcast (admin/manager only)
+> // Send notification to all students of a college
+> router.post('/broadcast', requireAuth,
+>   requireRoles(['manager','admin']),
 >   async (req, res) => {
->     const { label, dayOfWeek, startTime, endTime,
->             surchargePercent, message, college } = req.body
+>     const { title, body, college } = req.body
+>     if (!title || !body) {
+>       return res.status(400).json({ error: 'Title and body required' })
+>     }
 >
->     // Manager can only set for their own college
 >     const targetCollege = req.user.role === 'admin'
->       ? (college ?? req.user.college)
+>       ? college
 >       : req.user.college
 >
->     const rushHour = await RushHour.create({
+>     const users = await User.find({
 >       college: targetCollege,
->       label, dayOfWeek, startTime, endTime,
->       surchargePercent: surchargePercent ?? 0,
->       message: message ?? 'Busy hours — expect slight delays',
->       isActive: true,
->       createdBy: req.user.id
+>       role: 'student',
+>       expoPushToken: { $ne: null }
+>     }).select('expoPushToken').lean()
+>
+>     const tokens = users
+>       .map(u => u.expoPushToken)
+>       .filter(Boolean) as string[]
+>
+>     // Fire and forget
+>     sendBulkPushNotification(tokens, title, body, {
+>       type: 'broadcast', college: targetCollege
+>     }).catch(console.error)
+>
+>     res.json({
+>       message: 'Broadcast sent',
+>       recipients: tokens.length
 >     })
->     res.status(201).json(rushHour)
 >   }
 > )
 >
-> // PATCH /api/rush-hours/:id (admin — toggle or update)
-> router.patch('/:id', requireAuth, requireRoles(['manager','admin']),
+> // POST /api/notifications/daily-special (manager only)
+> // Announce a daily special item
+> router.post('/daily-special', requireAuth,
+>   requireRoles(['manager','admin']),
 >   async (req, res) => {
->     const rushHour = await RushHour.findById(req.params.id)
->     if (!rushHour) return res.status(404).json({ error: 'Not found' })
+>     const { menuItemId } = req.body
+>     const item = await MenuItem.findById(menuItemId).lean()
+>     if (!item) return res.status(404).json({ error: 'Item not found' })
 >
->     // Manager can only edit own college
->     if (req.user.role !== 'admin' &&
->         rushHour.college !== req.user.college) {
->       return res.status(403).json({ error: 'Access denied' })
->     }
+>     const college = req.user.role === 'admin'
+>       ? item.college
+>       : req.user.college
 >
->     Object.assign(rushHour, req.body)
->     await rushHour.save()
->     res.json(rushHour)
+>     const users = await User.find({
+>       college,
+>       role: 'student',
+>       expoPushToken: { $ne: null }
+>     }).select('expoPushToken').lean()
+>
+>     const tokens = users
+>       .map(u => u.expoPushToken)
+>       .filter(Boolean) as string[]
+>
+>     const template = NotificationTemplates.dailySpecial(
+>       item.name, item.price, college
+>     )
+>
+>     sendBulkPushNotification(tokens, template.title, template.body, template.data)
+>       .catch(console.error)
+>
+>     res.json({ message: 'Daily special announced', recipients: tokens.length })
 >   }
 > )
+> ```
 >
-> // DELETE /api/rush-hours/:id
-> router.delete('/:id', requireAuth, requireRoles(['manager','admin']),
->   async (req, res) => {
->     const rushHour = await RushHour.findById(req.params.id)
->     if (!rushHour) return res.status(404).json({ error: 'Not found' })
->     if (req.user.role !== 'admin' && rushHour.college !== req.user.college) {
->       return res.status(403).json({ error: 'Access denied' })
->     }
->     await rushHour.deleteOne()
->     res.json({ message: 'Deleted' })
+> **Wire notifications into existing order flow:**
+>
+> In `backend/src/services/order-payment.service.ts`
+> find `finalizeOrder()` and add notifications:
+> ```ts
+> import {
+>   sendPushNotification,
+>   NotificationTemplates
+> } from './notification.service'
+>
+> // After marking order as paid, send push notification
+> const student = await User.findById(order.student)
+>   .select('expoPushToken').lean()
+>
+> if (student?.expoPushToken) {
+>   const template = NotificationTemplates.orderPaid(order._id.toString())
+>   // Fire and forget
+>   sendPushNotification(
+>     student.expoPushToken,
+>     template.title,
+>     template.body,
+>     template.data
+>   ).catch(console.error)
+> }
+> ```
+>
+> In `backend/src/routes/orders.ts`
+> find where order status is updated to `ready`:
+> ```ts
+> // When admin marks order as ready
+> if (newStatus === 'ready') {
+>   const student = await User.findById(order.student)
+>     .select('expoPushToken').lean()
+>   if (student?.expoPushToken) {
+>     const itemNames = order.items.map((i: any) => i.menuItem.name)
+>     const template = NotificationTemplates.orderReady(itemNames)
+>     sendPushNotification(
+>       student.expoPushToken,
+>       template.title,
+>       template.body,
+>       template.data
+>     ).catch(console.error)
 >   }
-> )
+> }
+>
+> // When order is fulfilled (QR scanned)
+> if (newStatus === 'fulfilled') {
+>   const student = await User.findById(order.student)
+>     .select('expoPushToken').lean()
+>   if (student?.expoPushToken) {
+>     const template = NotificationTemplates.orderFulfilled()
+>     sendPushNotification(
+>       student.expoPushToken,
+>       template.title,
+>       template.body,
+>       { ...template.data, orderId: order._id.toString() }
+>     ).catch(console.error)
+>   }
+>
+>   // Schedule rate reminder 30 minutes after fulfillment
+>   setTimeout(async () => {
+>     const freshStudent = await User.findById(order.student)
+>       .select('expoPushToken').lean()
+>     if (freshStudent?.expoPushToken) {
+>       const rateTemplate = NotificationTemplates.rateReminder(
+>         order._id.toString()
+>       )
+>       sendPushNotification(
+>         freshStudent.expoPushToken,
+>         rateTemplate.title,
+>         rateTemplate.body,
+>         rateTemplate.data
+>       ).catch(console.error)
+>     }
+>   }, 30 * 60 * 1000) // 30 minutes
+> }
 > ```
 >
 > Mount in `app.ts`:
 > ```ts
-> import rushHoursRouter from './routes/rushHours'
-> app.use('/api/rush-hours', rushHoursRouter)
+> import notificationsRouter from './routes/notifications'
+> app.use('/api/notifications', notificationsRouter)
 > ```
 >
-> **Show rush hour surcharge in order creation (`orders.ts`):**
+> ## Mobile — Push Notification Setup
+>
+> **Install:**
+> ```bash
+> cd app && npx expo install expo-notifications expo-device
+> ```
+>
+> **Create `app/src/services/notifications.ts`:**
 > ```ts
-> // After calculating totalAmount, check if rush hour active
-> const now = new Date()
-> const currentDay = now.getDay()
-> const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
+> import * as Notifications from 'expo-notifications'
+> import * as Device from 'expo-device'
+> import { Platform } from 'react-native'
+> import { saveExpoPushToken } from '../api/index'
 >
-> const activeRush = await RushHour.findOne({
->   college: req.user.college,
->   isActive: true,
->   dayOfWeek: currentDay,
->   startTime: { $lte: currentTime },
->   endTime: { $gte: currentTime }
-> }).lean()
+> // Configure how notifications appear when app is foreground
+> Notifications.setNotificationHandler({
+>   handleNotification: async () => ({
+>     shouldShowAlert: true,
+>     shouldPlaySound: true,
+>     shouldSetBadge: true
+>   })
+> })
 >
-> let finalAmount = totalAmount
-> let rushHourApplied = false
+> export async function registerForPushNotifications(): Promise<string | null> {
+>   // Must be physical device
+>   if (!Device.isDevice) {
+>     console.log('Push notifications require physical device')
+>     return null
+>   }
 >
-> if (activeRush && activeRush.surchargePercent > 0) {
->   finalAmount = totalAmount * (1 + activeRush.surchargePercent / 100)
->   rushHourApplied = true
+>   // Check existing permissions
+>   const { status: existing } = await Notifications.getPermissionsAsync()
+>   let finalStatus = existing
+>
+>   // Request if not granted
+>   if (existing !== 'granted') {
+>     const { status } = await Notifications.requestPermissionsAsync()
+>     finalStatus = status
+>   }
+>
+>   if (finalStatus !== 'granted') {
+>     console.log('Push notification permission denied')
+>     return null
+>   }
+>
+>   // Android channel
+>   if (Platform.OS === 'android') {
+>     await Notifications.setNotificationChannelAsync('orders', {
+>       name: 'Order Updates',
+>       importance: Notifications.AndroidImportance.MAX,
+>       vibrationPattern: [0, 250, 250, 250],
+>       lightColor: '#00C853',
+>       sound: 'default'
+>     })
+>     await Notifications.setNotificationChannelAsync('general', {
+>       name: 'General',
+>       importance: Notifications.AndroidImportance.DEFAULT,
+>     })
+>   }
+>
+>   // Get token
+>   const token = await Notifications.getExpoPushTokenAsync({
+>     projectId: process.env.EXPO_PUBLIC_PROJECT_ID
+>   })
+>
+>   return token.data
 > }
 >
-> // Include in response so mobile can show it
-> // { order, razorpay, rushHour: activeRush ?? null }
+> export function setupNotificationListeners(navigation: any) {
+>   // Notification received while app is open
+>   const foregroundSub = Notifications.addNotificationReceivedListener(
+>     notification => {
+>       console.log('Notification received:', notification)
+>       // Could show in-app toast here
+>     }
+>   )
+>
+>   // User tapped a notification
+>   const responseSub = Notifications.addNotificationResponseReceivedListener(
+>     response => {
+>       const data = response.notification.request.content.data
+>
+>       // Navigate based on notification type
+>       switch (data.screen) {
+>         case 'OrderDetail':
+>           navigation.navigate('OrderDetail', { orderId: data.orderId })
+>           break
+>         case 'Orders':
+>           navigation.navigate('Orders')
+>           if (data.showRating) {
+>             // Will trigger rating modal in OrdersScreen
+>           }
+>           break
+>         case 'RateOrder':
+>           navigation.navigate('RateOrder', { orderId: data.orderId })
+>           break
+>         case 'Menu':
+>           navigation.navigate('Menu')
+>           break
+>         case 'Cart':
+>           navigation.navigate('Cart')
+>           break
+>       }
+>     }
+>   )
+>
+>   return () => {
+>     foregroundSub.remove()
+>     responseSub.remove()
+>   }
+> }
 > ```
 >
-> ## Admin Panel — Rush Hours Page
+> **In `app/src/App.tsx` or root navigator:**
+> ```ts
+> import {
+>   registerForPushNotifications,
+>   setupNotificationListeners
+> } from './services/notifications'
+> import { saveExpoPushToken } from './api/index'
 >
-> **Create `admin/src/pages/RushHoursPage.tsx`:**
+> // After login succeeds
+> export const onLoginSuccess = async () => {
+>   const token = await registerForPushNotifications()
+>   if (token) {
+>     // Save to backend — fire and forget
+>     saveExpoPushToken(token).catch(console.error)
+>   }
+> }
+>
+> // In root component
+> useEffect(() => {
+>   const cleanup = setupNotificationListeners(navigation)
+>   return cleanup
+> }, [navigation])
+> ```
+>
+> **Add to `app/src/api/index.ts`:**
+> ```ts
+> export const saveExpoPushToken = (token: string) =>
+>   api.post('/notifications/token', { expoPushToken: token })
+>
+> export const clearExpoPushToken = () =>
+>   api.delete('/notifications/token')
+> ```
+>
+> **Clear token on logout in `authStore.ts`:**
+> ```ts
+> logout: async () => {
+>   // Clear push token from backend before clearing local state
+>   clearExpoPushToken().catch(console.error)
+>   await AsyncStorage.removeItem('token')
+>   set({ token: null, user: null })
+> }
+> ```
+>
+> **Add to `app.json`:**
+> ```json
+> {
+>   "expo": {
+>     "plugins": [
+>       [
+>         "expo-notifications",
+>         {
+>           "icon": "./assets/notification-icon.png",
+>           "color": "#00C853",
+>           "sounds": [],
+>           "androidMode": "default"
+>         }
+>       ]
+>     ]
+>   }
+> }
+> ```
+>
+> ## Admin Panel — Broadcast Notification Page
+>
+> **Create `admin/src/pages/NotificationsPage.tsx`:**
 > ```tsx
-> // Full rush hours management page
 > // Layout:
-> //
 > // ┌─────────────────────────────────────────┐
-> // │  Rush Hours Management    [+ Add New]   │
-> // │  College: [DSCE ▼]  (admin sees all,   │
-> // │           manager sees own only)        │
+> // │  📢 Send Notification                   │
 > // ├─────────────────────────────────────────┤
-> // │  CURRENT STATUS                         │
-> // │  🔴 RUSH HOUR ACTIVE — Lunch Rush       │
-> // │  12:00 PM - 2:00 PM • Mon-Fri           │
-> // │  "Busy hours — 15 min wait"             │
+> // │  QUICK ACTIONS                          │
+> // │  ┌──────────┐ ┌──────────┐ ┌────────┐ │
+> // │  │ 🌟 Daily  │ │ ⚠️ Rush  │ │ 📣 Any │ │
+> // │  │ Special   │ │ Warning  │ │ Custom │ │
+> // │  └──────────┘ └──────────┘ └────────┘ │
 > // ├─────────────────────────────────────────┤
-> // │  ALL RUSH HOURS                         │
-> // │  ┌──────────────────────────────────┐  │
-> // │  │ 🌅 Breakfast Rush               │  │
-> // │  │ 8:00 - 10:00 • Mon-Fri          │  │
-> // │  │ No surcharge • Active ✅        │  │
-> // │  │ [Edit] [Toggle] [Delete]        │  │
-> // │  └──────────────────────────────────┘  │
+> // │  CUSTOM BROADCAST                       │
+> // │  College: [DSCE ▼]                      │
+> // │  Title: [____________________________]  │
+> // │  Message: [_________________________]   │
+> // │           [_________________________]   │
+> // │  Preview: 📱 [shows phone mockup]       │
+> // │  [Send to X students]                   │
+> // ├─────────────────────────────────────────┤
+> // │  DAILY SPECIAL                          │
+> // │  Pick item: [Masala Dosa ▼]             │
+> // │  [📢 Announce as Today's Special]       │
 > // └─────────────────────────────────────────┘
 >
-> // Add New Rush Hour modal:
-> // Label (e.g. "Lunch Rush")
-> // Days of week (checkboxes: Mon Tue Wed Thu Fri Sat Sun)
-> // Start time picker
-> // End time picker
-> // Surcharge % (0 means no extra charge)
-> // Message to students
-> // College (admin only — manager auto-set to own college)
->
-> // Use existing UI component patterns from other admin pages
-> // Show live countdown to next rush hour end time
-> // Auto-refresh status every 60 seconds
+> // Show sent notification history with timestamps
+> // Show recipient count per notification
 > ```
 >
-> **Add to admin API (`admin/src/api/index.ts`):**
+> **Add to admin API:**
 > ```ts
-> // Rush hours
-> export const getRushHours = (college?: string) =>
->   api.get(`/rush-hours/all${college ? `?college=${college}` : ''}`)
+> export const broadcastNotification = (data: {
+>   title: string, body: string, college?: string
+> }) => api.post('/notifications/broadcast', data)
 >
-> export const getRushHourStatus = (college: string) =>
->   api.get(`/rush-hours?college=${college}`)
->
-> export const createRushHour = (data: any) =>
->   api.post('/rush-hours', data)
->
-> export const updateRushHour = (id: string, data: any) =>
->   api.patch(`/rush-hours/${id}`, data)
->
-> export const deleteRushHour = (id: string) =>
->   api.delete(`/rush-hours/${id}`)
+> export const announceDailySpecial = (menuItemId: string) =>
+>   api.post('/notifications/daily-special', { menuItemId })
 > ```
 >
 > **Add route to admin `App.tsx`:**
 > ```tsx
-> <Route path="/rush-hours" element={
+> <Route path="/notifications" element={
 >   <ProtectedRoute roles={['manager','admin']}>
->     <RushHoursPage />
+>     <NotificationsPage />
 >   </ProtectedRoute>
 > } />
 > ```
 >
-> Add to sidebar/nav:
+> Add to sidebar:
 > ```tsx
-> { label: '⏰ Rush Hours', path: '/rush-hours', roles: ['manager','admin'] }
-> ```
->
-> ## Mobile — Rush Hour Banner
->
-> **In `app/src/screens/MenuScreen.tsx`:**
-> ```tsx
-> // Check rush hour status on mount
-> useEffect(() => {
->   getRushHourStatus(user.college)
->     .then(({ data }) => setRushHour(data))
->     .catch(() => {})
-> }, [])
->
-> // Show banner at top of menu if rush hour active
-> {rushHour?.isRushHour && (
->   <View style={styles.rushBanner}>
->     <Text style={styles.rushEmoji}>🔴</Text>
->     <View>
->       <Text style={styles.rushTitle}>Rush Hour Active</Text>
->       <Text style={styles.rushMsg}>{rushHour.current.message}</Text>
->       {rushHour.current.surchargePercent > 0 && (
->         <Text style={styles.rushSurcharge}>
->           +{rushHour.current.surchargePercent}% busy hour charge applies
->         </Text>
->       )}
->     </View>
->   </View>
-> )}
+> { label: '📢 Notifications', path: '/notifications', roles: ['manager','admin'] }
 > ```
 >
 > ---
 >
-> # FIX 3 — PER-COLLEGE MENU ITEMS
+> # FEATURE 2 — RATE YOUR MEAL + PUBLIC REVIEWS
 >
-> ## Backend — Add college field to MenuItem
+> ## Backend — Review Model
+>
+> **Create `backend/src/models/Review.ts`:**
+> ```ts
+> import mongoose, { Schema, Document } from 'mongoose'
+>
+> export interface IReview extends Document {
+>   menuItem:    mongoose.Types.ObjectId
+>   order:       mongoose.Types.ObjectId
+>   student:     mongoose.Types.ObjectId
+>   college:     string
+>   rating:      number       // 1-5
+>   title:       string       // "Crispy and delicious!"
+>   body:        string       // detailed review
+>   tags:        string[]     // ['spicy','fresh','value-for-money']
+>   images:      string[]     // future: photo reviews
+>   helpful:     number       // upvotes from other students
+>   isVerified:  boolean      // verified purchase (always true here)
+>   isVisible:   boolean      // admin can hide inappropriate reviews
+>   createdAt:   Date
+> }
+>
+> const ReviewSchema = new Schema<IReview>({
+>   menuItem:   { type: Schema.Types.ObjectId, ref: 'MenuItem', required: true },
+>   order:      { type: Schema.Types.ObjectId, ref: 'Order', required: true },
+>   student:    { type: Schema.Types.ObjectId, ref: 'User', required: true },
+>   college:    { type: String, required: true },
+>   rating:     { type: Number, required: true, min: 1, max: 5 },
+>   title:      { type: String, trim: true, maxlength: 100, default: '' },
+>   body:       { type: String, trim: true, maxlength: 500, default: '' },
+>   tags:       { type: [String], default: [] },
+>   helpful:    { type: Number, default: 0 },
+>   isVerified: { type: Boolean, default: true },
+>   isVisible:  { type: Boolean, default: true }
+> }, { timestamps: true })
+>
+> // One review per student per order item
+> ReviewSchema.index(
+>   { order: 1, menuItem: 1, student: 1 },
+>   { unique: true }
+> )
+>
+> // For fetching reviews of a menu item
+> ReviewSchema.index({ menuItem: 1, isVisible: 1, createdAt: -1 })
+>
+> export const Review = mongoose.model<IReview>('Review', ReviewSchema)
+> ```
 >
 > **Update `backend/src/models/MenuItem.ts`:**
 > ```ts
-> college: {
->   type: String,
->   required: true,
->   enum: ['DSCE', 'DSATM', 'NIE', 'ALL'],
->   default: 'ALL'  // 'ALL' means visible to every college
+> // Add rating summary — updated whenever a review is added
+> averageRating: { type: Number, default: 0, min: 0, max: 5 },
+> totalReviews:  { type: Number, default: 0 },
+> ratingBreakdown: {
+>   1: { type: Number, default: 0 },
+>   2: { type: Number, default: 0 },
+>   3: { type: Number, default: 0 },
+>   4: { type: Number, default: 0 },
+>   5: { type: Number, default: 0 }
 > }
 > ```
 >
-> **Update GET /api/menu:**
+> **Create `backend/src/routes/reviews.ts`:**
 > ```ts
-> router.get('/', async (req, res) => {
->   const { college } = req.query
+> // GET /api/reviews/menu/:menuItemId
+> // Public — anyone can see reviews for a menu item
+> router.get('/menu/:menuItemId', async (req, res) => {
+>   const { page = 1, limit = 10, sort = 'recent' } = req.query
 >
->   // Build filter
->   const filter: any = { isAvailable: true }
->   if (college) {
->     // Show items for this college + items marked ALL
->     filter.$or = [
->       { college: college },
->       { college: 'ALL' }
->     ]
+>   const sortOptions: any = {
+>     recent:  { createdAt: -1 },
+>     helpful: { helpful: -1 },
+>     highest: { rating: -1 },
+>     lowest:  { rating: 1 }
 >   }
 >
->   // Check cache
->   const cacheKey = college as string ?? 'ALL'
->   const cached = getMenuCache(cacheKey)
->   if (cached) return res.set('X-Cache','HIT').json(cached)
+>   const reviews = await Review.find({
+>     menuItem: req.params.menuItemId,
+>     isVisible: true
+>   })
+>   .populate('student', 'name college')
+>   .sort(sortOptions[sort as string] ?? sortOptions.recent)
+>   .skip((Number(page) - 1) * Number(limit))
+>   .limit(Number(limit))
+>   .lean()
 >
->   const items = await MenuItem.find(filter)
->     .select('name description price category image isAvailable college')
+>   const total = await Review.countDocuments({
+>     menuItem: req.params.menuItemId,
+>     isVisible: true
+>   })
+>
+>   const menuItem = await MenuItem.findById(req.params.menuItemId)
+>     .select('averageRating totalReviews ratingBreakdown name')
 >     .lean()
 >
->   setMenuCache(cacheKey, items)
->   return res.set('X-Cache','MISS').json(items)
+>   return res.json({
+>     menuItem,
+>     reviews,
+>     pagination: {
+>       page: Number(page),
+>       limit: Number(limit),
+>       total,
+>       pages: Math.ceil(total / Number(limit))
+>     }
+>   })
 > })
-> ```
 >
-> **Update POST /api/menu (admin creates item):**
-> ```ts
-> // Manager auto-assigned to their own college
-> // Admin can specify any college or ALL
-> const targetCollege = req.user.role === 'admin'
->   ? (college ?? 'ALL')
->   : req.user.college
+> // POST /api/reviews
+> // Student submits a review — must have a fulfilled order for this item
+> router.post('/', requireAuth, async (req, res) => {
+>   const { menuItemId, orderId, rating, title, body, tags } = req.body
 >
-> const item = await MenuItem.create({
->   ...req.body,
->   college: targetCollege
+>   // Validate rating
+>   if (!rating || rating < 1 || rating > 5) {
+>     return res.status(400).json({ error: 'Rating must be 1-5' })
+>   }
+>
+>   // Verify the student actually ordered and received this item
+>   const order = await Order.findOne({
+>     _id: orderId,
+>     student: req.user.id,
+>     status: 'fulfilled',  // must be fulfilled — verified purchase
+>     'items.menuItem': menuItemId
+>   }).lean()
+>
+>   if (!order) {
+>     return res.status(403).json({
+>       error: 'You can only review items from completed orders'
+>     })
+>   }
+>
+>   // Check not already reviewed this item from this order
+>   const existing = await Review.findOne({
+>     order: orderId,
+>     menuItem: menuItemId,
+>     student: req.user.id
+>   })
+>   if (existing) {
+>     return res.status(409).json({ error: 'Already reviewed this item' })
+>   }
+>
+>   // Create review
+>   const review = await Review.create({
+>     menuItem: menuItemId,
+>     order: orderId,
+>     student: req.user.id,
+>     college: req.user.college,
+>     rating,
+>     title: title?.slice(0, 100) ?? '',
+>     body: body?.slice(0, 500) ?? '',
+>     tags: (tags ?? []).slice(0, 5),
+>     isVerified: true,
+>     isVisible: true
+>   })
+>
+>   // Update menu item average rating
+>   await updateMenuItemRating(menuItemId)
+>
+>   // Populate student name for response
+>   await review.populate('student', 'name college')
+>
+>   return res.status(201).json(review)
 > })
+>
+> // POST /api/reviews/:id/helpful
+> // Any authenticated user can mark review as helpful
+> router.post('/:id/helpful', requireAuth, async (req, res) => {
+>   const review = await Review.findByIdAndUpdate(
+>     req.params.id,
+>     { $inc: { helpful: 1 } },
+>     { new: true }
+>   )
+>   if (!review) return res.status(404).json({ error: 'Review not found' })
+>   res.json({ helpful: review.helpful })
+> })
+>
+> // PATCH /api/reviews/:id/visibility (admin only — hide inappropriate)
+> router.patch('/:id/visibility', requireAuth,
+>   requireRoles(['manager','admin']),
+>   async (req, res) => {
+>     const { isVisible } = req.body
+>     const review = await Review.findByIdAndUpdate(
+>       req.params.id,
+>       { isVisible },
+>       { new: true }
+>     )
+>     if (!review) return res.status(404).json({ error: 'Review not found' })
+>
+>     // Update menu item rating after hiding/showing
+>     await updateMenuItemRating(review.menuItem.toString())
+>     res.json(review)
+>   }
+> )
+>
+> // GET /api/reviews/pending
+> // Get orders the student can still review
+> router.get('/pending', requireAuth, async (req, res) => {
+>   // Find fulfilled orders in last 7 days
+>   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+>   const orders = await Order.find({
+>     student: req.user.id,
+>     status: 'fulfilled',
+>     createdAt: { $gte: sevenDaysAgo }
+>   }).populate('items.menuItem', 'name image').lean()
+>
+>   // Find already reviewed
+>   const reviews = await Review.find({
+>     student: req.user.id,
+>     order: { $in: orders.map(o => o._id) }
+>   }).select('order menuItem').lean()
+>
+>   const reviewedSet = new Set(
+>     reviews.map(r => `${r.order}-${r.menuItem}`)
+>   )
+>
+>   // Return unreviewed items only
+>   const pending = orders.flatMap(order =>
+>     order.items
+>       .filter((item: any) =>
+>         !reviewedSet.has(`${order._id}-${item.menuItem._id}`)
+>       )
+>       .map((item: any) => ({
+>         orderId: order._id,
+>         menuItem: item.menuItem,
+>         orderDate: order.createdAt
+>       }))
+>   )
+>
+>   res.json(pending)
+> })
+>
+> // Helper — recalculate and update menu item rating stats
+> async function updateMenuItemRating(menuItemId: string) {
+>   const stats = await Review.aggregate([
+>     {
+>       $match: {
+>         menuItem: new mongoose.Types.ObjectId(menuItemId),
+>         isVisible: true
+>       }
+>     },
+>     {
+>       $group: {
+>         _id: null,
+>         averageRating: { $avg: '$rating' },
+>         totalReviews: { $sum: 1 },
+>         r1: { $sum: { $cond: [{ $eq: ['$rating', 1] }, 1, 0] } },
+>         r2: { $sum: { $cond: [{ $eq: ['$rating', 2] }, 1, 0] } },
+>         r3: { $sum: { $cond: [{ $eq: ['$rating', 3] }, 1, 0] } },
+>         r4: { $sum: { $cond: [{ $eq: ['$rating', 4] }, 1, 0] } },
+>         r5: { $sum: { $cond: [{ $eq: ['$rating', 5] }, 1, 0] } }
+>       }
+>     }
+>   ])
+>
+>   const s = stats[0] ?? {
+>     averageRating: 0, totalReviews: 0,
+>     r1: 0, r2: 0, r3: 0, r4: 0, r5: 0
+>   }
+>
+>   await MenuItem.findByIdAndUpdate(menuItemId, {
+>     averageRating: Math.round(s.averageRating * 10) / 10,
+>     totalReviews: s.totalReviews,
+>     'ratingBreakdown.1': s.r1,
+>     'ratingBreakdown.2': s.r2,
+>     'ratingBreakdown.3': s.r3,
+>     'ratingBreakdown.4': s.r4,
+>     'ratingBreakdown.5': s.r5
+>   })
+> }
 > ```
 >
-> ## Admin Panel — Menu Page per College
+> Mount in `app.ts`:
+> ```ts
+> import reviewsRouter from './routes/reviews'
+> app.use('/api/reviews', reviewsRouter)
+> ```
 >
-> **Update `admin/src/pages/MenuPage.tsx`:**
+> ## Mobile — Rating Flow
+>
+> **Create `app/src/screens/RateOrderScreen.tsx`:**
 > ```tsx
-> // Add college filter tabs at top (admin only)
-> // Manager sees only their college items + ALL items
+> // Shown after order fulfilled OR from notification tap
+> // One screen covers all unreviewed items from an order
 >
-> // Tab bar:
-> // [All Colleges] [DSCE] [DSATM] [NIE]  ← admin only
-> // [DSCE Items] [ALL Items]              ← manager sees this
+> // Layout — card per item with:
+> // ┌─────────────────────────────────────┐
+> // │  🍱 Masala Dosa                     │
+> // │  How would you rate this?           │
+> // │                                     │
+> // │  ☆ ☆ ☆ ☆ ☆  ← tap to rate         │
+> // │  (stars animate when tapped)        │
+> // │                                     │
+> // │  Quick tags (tap to select):        │
+> // │  [🌶️ Spicy] [🥗 Fresh] [💰 Value]  │
+> // │  [😋 Delicious] [👨‍🍳 Well made]     │
+> // │  [🐌 Slow service] [🥶 Lukewarm]   │
+> // │                                     │
+> // │  Add a review (optional):           │
+> // │  Title: [_______________________]   │
+> // │  [Write your review here...    ]    │
+> // │                                     │
+> // │  [Skip]          [Submit ⭐]        │
+> // └─────────────────────────────────────┘
 >
-> // Each menu item card shows college badge
-> // ┌────────────────────────────────┐
-> // │ 🍱 Masala Dosa      [DSCE]    │
-> // │ Crispy dosa with chutney       │
-> // │ ₹60 • Available ✅            │
-> // │ [Edit] [Toggle] [Delete]       │
-> // └────────────────────────────────┘
+> const RATING_TAGS = {
+>   positive: [
+>     '😋 Delicious', '🌶️ Perfectly spicy', '🥗 Fresh',
+>     '💰 Value for money', '👨‍🍳 Well prepared',
+>     '⚡ Served fast', '🍽️ Great portion'
+>   ],
+>   negative: [
+>     '😐 Average', '🥶 Not hot enough', '🐌 Took long',
+>     '💸 Overpriced', '🧂 Too salty', '🫙 Too oily'
+>   ]
+> }
 >
-> // Add Item modal — add college dropdown
-> // Admin: can choose DSCE / DSATM / NIE / ALL
-> // Manager: college auto-set to their own, field hidden
->
-> // When manager logs in, they only see:
-> // - Items with college === their college
-> // - Items with college === 'ALL'
-> // They can edit their college items but not ALL items
-> // Only admin can create/edit ALL items
-> ```
->
-> ## Mobile — Pass college when fetching menu
->
-> **In `app/src/api/index.ts`:**
-> ```ts
-> export const getMenu = (college?: string) =>
->   api.get(`/menu${college ? `?college=${college}` : ''}`)
->     .then(r => r.data)
-> ```
->
-> **In `app/src/screens/MenuScreen.tsx`:**
-> ```ts
-> // Pass user's college when fetching
-> const { user } = useAuthStore()
-> const menu = await getMenu(user.college)
-> ```
->
-> ---
->
-> # FIX 4 — CHEF NOTES / CUSTOM ITEM DESCRIPTION
->
-> ## Backend — Add notes to order items
->
-> **Update `backend/src/models/Order.ts`:**
-> ```ts
-> items: [{
->   menuItem:  { type: Schema.Types.ObjectId, ref: 'MenuItem' },
->   quantity:  { type: Number, required: true, min: 1 },
->   price:     { type: Number, required: true },
->   // NEW FIELD
->   chefNote:  {
->     type: String,
->     trim: true,
->     maxlength: [200, 'Chef note cannot exceed 200 characters'],
->     default: ''
->   }
-> }]
-> ```
->
-> **Update order creation in `orders.ts`:**
-> ```ts
-> // When mapping cart items to order items
-> const orderItems = await Promise.all(items.map(async (item: any) => {
->   const menuItem = await MenuItem.findById(item.menuItemId).lean()
->   if (!menuItem || !menuItem.isAvailable) {
->     throw new Error(`${menuItem?.name ?? 'Item'} is not available`)
->   }
->
->   // Sanitize chef note — strip HTML, limit length
->   const chefNote = item.chefNote
->     ? String(item.chefNote).replace(/<[^>]*>/g, '').slice(0, 200).trim()
->     : ''
->
->   return {
->     menuItem: menuItem._id,
->     quantity: item.quantity,
->     price: menuItem.price,  // server-side price always
->     chefNote                // from client, sanitized
->   }
-> }))
-> ```
->
-> ## Mobile — Chef Notes UI
->
-> **Update `app/src/screens/CartScreen.tsx`:**
->
-> Each cart item shows an expandable note field:
-> ```tsx
-> // For each cart item
-> const CartItem = ({ item, onUpdateNote }) => {
->   const [showNote, setShowNote] = useState(!!item.chefNote)
->   const [note, setNote] = useState(item.chefNote ?? '')
->
->   return (
->     <View style={styles.cartItem}>
->       {/* existing item display */}
->       <Text style={styles.itemName}>{item.name}</Text>
->       <Text style={styles.itemPrice}>₹{item.price}</Text>
->
->       {/* Chef note toggle */}
->       <TouchableOpacity
->         onPress={() => setShowNote(!showNote)}
->         style={styles.noteToggle}
->       >
->         <Text style={styles.noteToggleText}>
->           {showNote ? '✕ Remove note' : '📝 Add note to chef'}
->         </Text>
+> // Star rating component
+> const StarRating = ({ rating, onRate, size = 40 }) => (
+>   <View style={{ flexDirection: 'row', gap: 8 }}>
+>     {[1, 2, 3, 4, 5].map(star => (
+>       <TouchableOpacity key={star} onPress={() => onRate(star)}>
+>         <Animated.Text style={{
+>           fontSize: size,
+>           // Animate scale when tapped
+>         }}>
+>           {star <= rating ? '⭐' : '☆'}
+>         </Animated.Text>
 >       </TouchableOpacity>
+>     ))}
+>   </View>
+> )
 >
->       {/* Expandable note input */}
->       {showNote && (
->         <View style={styles.noteContainer}>
->           <TextInput
->             style={styles.noteInput}
->             placeholder="e.g. Extra spicy, no onions, less oil..."
->             placeholderTextColor="#999"
->             value={note}
->             onChangeText={(text) => {
->               setNote(text)
->               onUpdateNote(item.menuItemId, text)
->             }}
->             maxLength={200}
->             multiline
->             numberOfLines={2}
->           />
->           <Text style={styles.charCount}>{note.length}/200</Text>
->         </View>
->       )}
+> // Show rating label based on stars
+> const ratingLabels = {
+>   1: "😞 Poor",
+>   2: "😕 Below average",
+>   3: "😐 Okay",
+>   4: "😊 Good",
+>   5: "🤩 Excellent!"
+> }
+> ```
+>
+> **Create `app/src/screens/MenuItemReviewsScreen.tsx`:**
+> ```tsx
+> // Public reviews page — Amazon style
+> // Shown when student taps on a menu item
+>
+> // Layout:
+> // ┌─────────────────────────────────────┐
+> // │  🍱 Masala Dosa                     │
+> // │  ⭐⭐⭐⭐☆  4.2  (127 reviews)       │
+> // │                                     │
+> // │  RATING BREAKDOWN                   │
+> // │  5★ ████████████████░░░  68%       │
+> // │  4★ ████████░░░░░░░░░░  22%        │
+> // │  3★ ██░░░░░░░░░░░░░░░░   6%        │
+> // │  2★ █░░░░░░░░░░░░░░░░░   3%        │
+> // │  1★ ░░░░░░░░░░░░░░░░░░   1%        │
+> // │                                     │
+> // │  Sort by: [Most Recent ▼]           │
+> // │                                     │
+> // │  ┌──────────────────────────────┐   │
+> // │  │ Rahul K. • DSCE • ⭐⭐⭐⭐⭐  │   │
+> // │  │ ✅ Verified Purchase         │   │
+> // │  │ "Best masala dosa in campus" │   │
+> // │  │ Crispy, well-spiced, value   │   │
+> // │  │ [🌶️ Spicy] [💰 Value]       │   │
+> // │  │ 12 people found this helpful │   │
+> // │  │ [👍 Helpful]    3 days ago  │   │
+> // │  └──────────────────────────────┘   │
+> // │                                     │
+> // │  [Load more reviews]                │
+> // └─────────────────────────────────────┘
+>
+> // Rating bar component
+> const RatingBar = ({ star, count, total }) => {
+>   const percent = total > 0 ? (count / total) * 100 : 0
+>   return (
+>     <View style={styles.ratingBarRow}>
+>       <Text style={styles.starLabel}>{star}★</Text>
+>       <View style={styles.barBackground}>
+>         <View style={[styles.barFill, {
+>           width: `${percent}%`,
+>           backgroundColor: percent > 50 ? '#00C853' : '#FFC107'
+>         }]} />
+>       </View>
+>       <Text style={styles.percent}>{Math.round(percent)}%</Text>
 >     </View>
 >   )
 > }
 >
-> // Styles
-> noteToggle: {
->   marginTop: 6,
->   alignSelf: 'flex-start'
-> },
-> noteToggleText: {
->   color: '#00C853',
->   fontSize: 13,
->   fontWeight: '500'
-> },
-> noteContainer: {
->   marginTop: 8,
->   backgroundColor: '#FFFDE7',
->   borderRadius: 8,
->   borderWidth: 1,
->   borderColor: '#FDD835',
->   padding: 10
-> },
-> noteInput: {
->   fontSize: 14,
->   color: '#333',
->   minHeight: 48
-> },
-> charCount: {
->   fontSize: 11,
->   color: '#999',
->   textAlign: 'right',
->   marginTop: 4
-> }
-> ```
->
-> **Update cartStore to store notes:**
-> ```ts
-> // In cartStore.ts add note to cart item type
-> interface CartItem {
->   menuItemId: string
->   name: string
->   price: number
->   quantity: number
->   chefNote: string  // NEW
-> }
->
-> // Add action
-> updateChefNote: (menuItemId: string, note: string) =>
->   set(state => ({
->     items: state.items.map(item =>
->       item.menuItemId === menuItemId
->         ? { ...item, chefNote: note }
->         : item
->     )
->   }))
-> ```
->
-> **Update createOrder API call to include notes:**
-> ```ts
-> // In api/index.ts
-> export const createOrder = (items: CartItem[]) =>
->   api.post('/orders', {
->     items: items.map(i => ({
->       menuItemId: i.menuItemId,
->       quantity: i.quantity,
->       chefNote: i.chefNote ?? ''  // include note
->     }))
->   }).then(r => r.data)
-> ```
->
-> ## Admin Panel — Show Chef Notes on Orders
->
-> **In `admin/src/pages/OrdersPage.tsx`:**
->
-> Each order card shows chef notes prominently:
-> ```tsx
-> // In order items list
-> {order.items.map(item => (
->   <View key={item._id} style={orderStyles.item}>
->     <Text>{item.menuItem.name} × {item.quantity}</Text>
->     <Text>₹{item.price * item.quantity}</Text>
->
->     {/* Show chef note if present */}
->     {item.chefNote && (
->       <View style={orderStyles.chefNote}>
->         <Text style={orderStyles.chefNoteIcon}>👨‍🍳</Text>
->         <Text style={orderStyles.chefNoteText}>
->           {item.chefNote}
+> // Review card component
+> const ReviewCard = ({ review, onHelpful }) => (
+>   <View style={styles.reviewCard}>
+>     {/* Header */}
+>     <View style={styles.reviewHeader}>
+>       <View style={styles.avatar}>
+>         <Text style={styles.avatarText}>
+>           {review.student.name[0].toUpperCase()}
 >         </Text>
 >       </View>
->     )}
->   </View>
-> ))}
+>       <View>
+>         <Text style={styles.reviewerName}>{review.student.name}</Text>
+>         <Text style={styles.reviewerCollege}>{review.student.college}</Text>
+>       </View>
+>       <View style={styles.starRow}>
+>         {'⭐'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
+>       </View>
+>     </View>
 >
-> // Style the chef note to stand out
-> // chefNote: yellow background, left border accent
-> // so staff cannot miss it
-> chefNote: {
->   flexDirection: 'row',
->   alignItems: 'flex-start',
->   backgroundColor: '#FFFDE7',
->   borderLeftWidth: 3,
->   borderLeftColor: '#FDD835',
->   borderRadius: 6,
->   padding: 8,
->   marginTop: 6,
->   gap: 6
-> },
-> chefNoteIcon: { fontSize: 16 },
-> chefNoteText: {
->   color: '#555',
->   fontSize: 13,
->   fontStyle: 'italic',
->   flex: 1
-> }
+>     {/* Verified badge */}
+>     <Text style={styles.verifiedBadge}>✅ Verified Purchase</Text>
+>
+>     {/* Review content */}
+>     {review.title ? (
+>       <Text style={styles.reviewTitle}>{review.title}</Text>
+>     ) : null}
+>     {review.body ? (
+>       <Text style={styles.reviewBody}>{review.body}</Text>
+>     ) : null}
+>
+>     {/* Tags */}
+>     {review.tags.length > 0 && (
+>       <View style={styles.tagsRow}>
+>         {review.tags.map(tag => (
+>           <View key={tag} style={styles.tag}>
+>             <Text style={styles.tagText}>{tag}</Text>
+>           </View>
+>         ))}
+>       </View>
+>     )}
+>
+>     {/* Helpful */}
+>     <View style={styles.helpfulRow}>
+>       <Text style={styles.helpfulCount}>
+>         {review.helpful > 0
+>           ? `${review.helpful} ${review.helpful === 1 ? 'person' : 'people'} found this helpful`
+>           : ''}
+>       </Text>
+>       <TouchableOpacity
+>         style={styles.helpfulBtn}
+>         onPress={() => onHelpful(review._id)}
+>       >
+>         <Text style={styles.helpfulBtnText}>👍 Helpful</Text>
+>       </TouchableOpacity>
+>       <Text style={styles.reviewDate}>
+>         {formatTimeAgo(review.createdAt)}
+>       </Text>
+>     </View>
+>   </View>
+> )
 > ```
 >
-> **In order print/display for kitchen — make notes BIG:**
+> **Update `app/src/screens/MenuScreen.tsx`:**
+> Show rating on menu item cards:
 > ```tsx
-> // Kitchen view or QR scan confirmation
-> // Chef note must be impossible to miss
-> {item.chefNote && (
->   <View style={kitchenStyles.chefAlert}>
->     <Text style={kitchenStyles.chefAlertTitle}>
->       ⚠️ SPECIAL REQUEST
->     </Text>
->     <Text style={kitchenStyles.chefAlertText}>
->       {item.chefNote}
->     </Text>
->   </View>
+> // Each menu item card shows rating
+> {item.totalReviews > 0 ? (
+>   <TouchableOpacity
+>     onPress={() => navigation.navigate('ItemReviews', {
+>       menuItemId: item._id,
+>       menuItemName: item.name
+>     })}
+>   >
+>     <View style={styles.ratingRow}>
+>       <Text style={styles.ratingStar}>⭐</Text>
+>       <Text style={styles.ratingValue}>
+>         {item.averageRating.toFixed(1)}
+>       </Text>
+>       <Text style={styles.ratingCount}>
+>         ({item.totalReviews})
+>       </Text>
+>     </View>
+>   </TouchableOpacity>
+> ) : (
+>   <Text style={styles.noRating}>No reviews yet</Text>
 > )}
+> ```
 >
-> kitchenStyles = {
->   chefAlert: {
->     backgroundColor: '#FF6F00',
->     borderRadius: 8,
->     padding: 12,
->     marginTop: 8
->   },
->   chefAlertTitle: {
->     color: '#FFF',
->     fontWeight: '800',
->     fontSize: 12,
->     marginBottom: 4
->   },
->   chefAlertText: {
->     color: '#FFF',
->     fontSize: 15,
->     fontWeight: '600'
+> **Add to `app/src/api/index.ts`:**
+> ```ts
+> // Reviews
+> export const getItemReviews = (
+>   menuItemId: string,
+>   page = 1,
+>   sort = 'recent'
+> ) => api.get(`/reviews/menu/${menuItemId}?page=${page}&sort=${sort}`)
+>   .then(r => r.data)
+>
+> export const submitReview = (data: {
+>   menuItemId: string
+>   orderId: string
+>   rating: number
+>   title?: string
+>   body?: string
+>   tags?: string[]
+> }) => api.post('/reviews', data).then(r => r.data)
+>
+> export const markReviewHelpful = (reviewId: string) =>
+>   api.post(`/reviews/${reviewId}/helpful`).then(r => r.data)
+>
+> export const getPendingReviews = () =>
+>   api.get('/reviews/pending').then(r => r.data)
+> ```
+>
+> **Add screens to `Navigation.tsx`:**
+> ```tsx
+> <Stack.Screen
+>   name="RateOrder"
+>   component={RateOrderScreen}
+>   options={{ title: 'Rate Your Meal', headerShown: true }}
+> />
+> <Stack.Screen
+>   name="ItemReviews"
+>   component={MenuItemReviewsScreen}
+>   options={{ title: 'Reviews', headerShown: true }}
+> />
+> ```
+>
+> ## Admin Panel — Reviews Management
+>
+> **Create `admin/src/pages/ReviewsPage.tsx`:**
+> ```tsx
+> // Layout:
+> // ┌─────────────────────────────────────────┐
+> // │  ⭐ Reviews Management                  │
+> // │  College: [All ▼]  Item: [All ▼]       │
+> // │  Filter: [All] [Flagged] [Hidden]       │
+> // ├─────────────────────────────────────────┤
+> // │  TOP RATED ITEMS (this week)            │
+> // │  1. Masala Dosa    ⭐4.8  (23 reviews) │
+> // │  2. Filter Coffee  ⭐4.6  (18 reviews) │
+> // ├─────────────────────────────────────────┤
+> // │  RECENT REVIEWS                         │
+> // │  ┌────────────────────────────────────┐ │
+> // │  │ Rahul K. • Masala Dosa • ⭐⭐⭐⭐⭐ │ │
+> // │  │ "Best in campus..."                │ │
+> // │  │ [👁️ Visible] [🚫 Hide] [🗑️ Delete] │ │
+> // │  └────────────────────────────────────┘ │
+> // └─────────────────────────────────────────┘
+> ```
+>
+> **Add to admin API:**
+> ```ts
+> export const getAllReviews = (params?: {
+>   college?: string, menuItemId?: string, isVisible?: boolean
+> }) => api.get('/reviews/admin', { params }).then(r => r.data)
+>
+> export const toggleReviewVisibility = (id: string, isVisible: boolean) =>
+>   api.patch(`/reviews/${id}/visibility`, { isVisible })
+> ```
+>
+> Add to admin reviews route in backend:
+> ```ts
+> // GET /api/reviews/admin (admin only)
+> router.get('/admin', requireAuth, requireRoles(['manager','admin']),
+>   async (req, res) => {
+>     const { college, menuItemId, isVisible } = req.query
+>     const filter: any = {}
+>
+>     if (college) filter.college = college
+>     else if (req.user.role !== 'admin') filter.college = req.user.college
+>
+>     if (menuItemId) filter.menuItem = menuItemId
+>     if (isVisible !== undefined) filter.isVisible = isVisible === 'true'
+>
+>     const reviews = await Review.find(filter)
+>       .populate('student', 'name college email')
+>       .populate('menuItem', 'name')
+>       .sort({ createdAt: -1 })
+>       .limit(100)
+>       .lean()
+>
+>     res.json(reviews)
 >   }
-> }
+> )
+> ```
+>
+> **Add route to admin App.tsx:**
+> ```tsx
+> <Route path="/reviews" element={
+>   <ProtectedRoute roles={['manager','admin']}>
+>     <ReviewsPage />
+>   </ProtectedRoute>
+> } />
+> ```
+>
+> Add to sidebar:
+> ```tsx
+> { label: '⭐ Reviews', path: '/reviews', roles: ['manager','admin'] }
 > ```
 >
 > ---
 >
-> ## AFTER ALL FIXES — Verify Everything
+> ## FINAL VERIFICATION
 >
 > ```bash
-> # Backend clean
+> # Backend TypeScript
 > cd backend && npx tsc --noEmit
 >
-> # Start and test all new routes
+> # Start and test new routes
 > cd backend && npm run dev &
 > sleep 5
 >
-> # Test OTP endpoint responds fast
-> time curl -s -X POST http://localhost:4000/api/auth/resend-otp \
+> # Test notification token save
+> curl -X POST http://localhost:4000/api/notifications/token \
+>   -H "Authorization: Bearer YOUR_TOKEN" \
 >   -H "Content-Type: application/json" \
->   -d '{"email":"test@test.com"}'
-> # Must respond in under 500ms
+>   -d '{"expoPushToken":"ExponentPushToken[test]"}'
 >
-> # Test rush hours route exists
-> curl http://localhost:4000/api/rush-hours?college=DSCE
+> # Test reviews fetch (public)
+> curl http://localhost:4000/api/reviews/menu/SOME_MENU_ITEM_ID
 >
-> # Test menu with college filter
-> curl http://localhost:4000/api/menu?college=DSCE
+> # Test pending reviews
+> curl http://localhost:4000/api/reviews/pending \
+>   -H "Authorization: Bearer YOUR_TOKEN"
 >
 > # Admin build
 > cd admin && npm run build
@@ -874,66 +1252,62 @@ Copy into a fresh conversation:
 >
 > ```
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-> FIX REPORT
+> FEATURE REPORT
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 >
-> FIX 1 — OTP:
->   Root cause found:          [explain exactly]
->   Resend installed:          YES/NO
->   RESEND_API_KEY:            SET/MISSING
->   email.service.ts correct:  YES/NO
->   OTP non-blocking:          YES/NO
->   OTP test response time:    Xms
->   Email received in test:    YES/NO
+> FEATURE 1 — NOTIFICATIONS:
+>   notification.service.ts:     YES/NO
+>   Push token saved on login:   YES/NO
+>   Token cleared on logout:     YES/NO
+>   Order paid notification:     YES/NO
+>   Order ready notification:    YES/NO
+>   Order fulfilled + reminder:  YES/NO
+>   Admin broadcast page:        YES/NO
+>   Daily special announce:      YES/NO
+>   app.json plugin added:       YES/NO
 >
-> FIX 2 — Rush Hours:
->   RushHour model created:    YES/NO
->   Rush hour routes mounted:  YES/NO
->   Admin page created:        YES/NO
->   Mobile banner added:       YES/NO
->   Surcharge in orders:       YES/NO
->
-> FIX 3 — Per-College Menu:
->   college field on MenuItem: YES/NO
->   Menu filtered by college:  YES/NO
->   Admin tabs by college:     YES/NO
->   Mobile passes college:     YES/NO
->   NIE added everywhere:      YES/NO
->
-> FIX 4 — Chef Notes:
->   chefNote field on Order:   YES/NO
->   Mobile note input added:   YES/NO
->   cartStore updated:         YES/NO
->   Admin shows notes:         YES/NO
->   Kitchen alert styled:      YES/NO
+> FEATURE 2 — REVIEWS:
+>   Review model created:        YES/NO
+>   MenuItem rating fields:      YES/NO
+>   Public reviews GET route:    YES/NO
+>   Verified purchase check:     YES/NO
+>   One review per order item:   YES/NO
+>   Helpful votes:               YES/NO
+>   Admin hide/show reviews:     YES/NO
+>   RateOrderScreen:             YES/NO
+>   Star animation:              YES/NO
+>   Quick tags:                  YES/NO
+>   ItemReviewsScreen:           YES/NO
+>   Rating bars (Amazon style):  YES/NO
+>   Rating on menu cards:        YES/NO
+>   Admin reviews page:          YES/NO
 >
 > BUILD:
 >   tsc --noEmit:    CLEAN/ERRORS
 >   admin build:     CLEAN/ERRORS
 >   mobile export:   CLEAN/ERRORS
 >
-> ENV VARS NEEDED FROM ME:
->   [list anything missing]
+> ENV VARS NEEDED:
+>   EXPO_PUBLIC_PROJECT_ID → get from expo.dev dashboard
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 > ```
 >
 > **RULES:**
 > - Never touch .env files
-> - Never touch payment, webhook, Razorpay, QR, socket events
+> - Never touch payment, webhook, QR, Razorpay, socket events
 > - Show diff before every change
-> - Fix in order: 1 → 2 → 3 → 4
-> - Run tsc after every fix
+> - Fix in order: Feature 1 → Feature 2
+> - Run tsc after every feature
 > - One file at a time
 
 ---
 
-## What You Do Right Now
+## One Thing You Do Before Running
 
-**If RESEND_API_KEY is missing:**
+Get your Expo Project ID — needed for push notifications:
 ```
-1. resend.com → sign up free
-2. API Keys → Create API Key → copy it
-3. Paste into backend/.env as RESEND_API_KEY=re_xxxxx
+expo.dev → log in → your project → copy the Project ID
+Add to app/.env: EXPO_PUBLIC_PROJECT_ID=your-project-id
 ```
 
-That single key fixes OTP instantly. Everything else the agent handles.
+Everything else the agent handles.

@@ -55,6 +55,7 @@ export function normalizeMenuItem(value: unknown): MenuItem | null {
         validTempOptions.includes(option as TempOption),
       )
     : [];
+  const rawBreakdown = isRecord(value.ratingBreakdown) ? value.ratingBreakdown : {};
 
   return {
     id,
@@ -67,6 +68,16 @@ export function normalizeMenuItem(value: unknown): MenuItem | null {
     category,
     tempOptions,
     isAvailable: value.isAvailable !== false,
+    isFeatured: value.isFeatured === true,
+    averageRating: toNumber(value.averageRating),
+    totalReviews: toNumber(value.totalReviews),
+    ratingBreakdown: {
+      '1': toNumber(rawBreakdown['1']),
+      '2': toNumber(rawBreakdown['2']),
+      '3': toNumber(rawBreakdown['3']),
+      '4': toNumber(rawBreakdown['4']),
+      '5': toNumber(rawBreakdown['5']),
+    },
   };
 }
 

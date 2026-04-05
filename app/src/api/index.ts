@@ -1,63 +1,25 @@
 import axios, { type AxiosResponse } from 'axios';
-import { NativeModules, Platform } from 'react-native';
 import { DEFAULT_COLLEGE, normalizeCollege } from '../constants/colleges';
 import { useAuthStore } from '../stores/authStore';
+import {
+  API_BASE,
+  API_CONFIG_ERROR,
+  API_ORIGIN,
+  PAYMENT_API_BASE,
+} from './config';
 import type {
   College,
   MenuItem,
   Order,
+  PendingReviewItem,
   PaymentInitResponse,
   PaymentMode,
+  Review,
   RushHourRule,
   RushHourStatus,
   User,
 } from '../types';
 import { normalizeMenuItems } from '../utils/menu';
-
-const normalizeOrigin = (value?: string | null): string | null => {
-  if (!value) {
-    return null;
-  }
-
-  return value.replace(/\/api\/?$/, '').replace(/\/$/, '');
-};
-
-const getExpoDevHost = (): string | null => {
-  const possibleScriptUrl = NativeModules.SourceCode?.scriptURL;
-
-  if (!possibleScriptUrl) {
-    return null;
-  }
-
-  try {
-    return new URL(possibleScriptUrl).hostname;
-  } catch {
-    const match = possibleScriptUrl.match(/^[a-z]+:\/\/([^/:]+)/i);
-    return match?.[1] || null;
-  }
-};
-
-const getDefaultApiOrigin = (): string | null => {
-  if (!__DEV__) {
-    return null;
-  }
-
-  const expoHost = getExpoDevHost();
-  if (expoHost) {
-    return `http://${expoHost}:4000`;
-  }
-
-  return Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://127.0.0.1:4000';
-};
-
-const configuredOrigin = normalizeOrigin(process.env.EXPO_PUBLIC_API_URL);
-const configuredPaymentOrigin = normalizeOrigin(process.env.EXPO_PUBLIC_PAYMENT_API_URL);
-const inferredOrigin = getDefaultApiOrigin();
-
-export const API_CONFIG_ERROR =
-  configuredOrigin || inferredOrigin
-    ? null
-    : 'This build is missing EXPO_PUBLIC_API_URL. Point it to your public backend URL and rebuild the app.';
 
 const MENU_CACHE_TTL_MS = 2 * 60 * 1000;
 
@@ -69,12 +31,6 @@ type MenuCacheEntry = {
 type RushHourApiRecord = Omit<RushHourRule, 'college'> & {
   college?: string | null;
 };
-
-export const API_ORIGIN = configuredOrigin || inferredOrigin || 'https://invalid.localhost';
-const PAYMENT_API_ORIGIN = configuredPaymentOrigin || API_ORIGIN;
-
-export const API_BASE = `${API_ORIGIN}/api`;
-export const PAYMENT_API_BASE = PAYMENT_API_ORIGIN;
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -109,6 +65,7 @@ api.interceptors.response.use(
 );
 
 export default api;
+export { API_BASE, API_CONFIG_ERROR };
 
 function resolveMenuCollege(college?: string | null): College {
   return normalizeCollege(college) || DEFAULT_COLLEGE;
@@ -246,7 +203,10 @@ export const authApi = {
   googleCompleteSignup: (data: GoogleAuthPayload & { college: College }) =>
     api.post<AuthResponse>('/auth/google/complete', data),
   requestPasswordResetOtp: (data: { email: string }) =>
-    api.post<{ message: string }>('/auth/forgot-password/request', data),
+    api.post<{ message: string; purpose?: 'signup' | 'password_reset' }>(
+      '/auth/forgot-password/request',
+      data,
+    ),
   resetPasswordWithOtp: (data: { email: string; code: string; password: string }) =>
     api.post<AuthResponse>('/auth/forgot-password/reset', data),
   login: (data: { email: string; password: string }) =>
@@ -280,12 +240,53 @@ export const rushHoursApi = {
 };
 
 export async function warmupBackend() {
-  if (!configuredOrigin && !inferredOrigin) {
+  if (API_CONFIG_ERROR) {
     return;
   }
 
   await fetch(`${API_ORIGIN}/warmup`).catch(() => undefined);
 }
+
+export const saveExpoPushToken = (expoPushToken: string) =>
+  api.post('/notifications/token', { expoPushToken });
+
+export const clearExpoPushToken = () => api.delete('/notifications/token');
+
+export const reviewsApi = {
+  getItemReviews: (
+    menuItemId: string,
+    page = 1,
+    sort: 'recent' | 'helpful' | 'highest' | 'lowest' = 'recent',
+  ) =>
+    api
+      .get<{
+        menuItem: Pick<MenuItem, 'id' | 'name' | 'averageRating' | 'totalReviews' | 'ratingBreakdown'> & {
+          _id?: string;
+        };
+        reviews: Review[];
+        pagination: {
+          page: number;
+          limit: number;
+          total: number;
+          pages: number;
+        };
+      }>(`/reviews/menu/${menuItemId}`, {
+        params: { page, sort },
+      })
+      .then((response) => response.data),
+  submitReview: (data: {
+    menuItemId: string;
+    orderId: string;
+    rating: number;
+    title?: string;
+    body?: string;
+    tags?: string[];
+  }) => api.post<Review>('/reviews', data).then((response) => response.data),
+  markReviewHelpful: (reviewId: string) =>
+    api.post<{ helpful: number }>(`/reviews/${reviewId}/helpful`).then((response) => response.data),
+  getPendingReviews: () =>
+    api.get<PendingReviewItem[]>('/reviews/pending').then((response) => response.data),
+};
 
 export const orderApi = {
   createOrder: async (data: {

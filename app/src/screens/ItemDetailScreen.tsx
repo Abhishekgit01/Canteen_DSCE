@@ -4,6 +4,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -32,6 +33,7 @@ export default function ItemDetailScreen() {
   const [selectedTemp, setSelectedTemp] = useState(item.tempOptions[0] || 'normal');
   const [quantity, setQuantity] = useState(1);
   const [scheduledTime, setScheduledTime] = useState(getDefaultPickupTime(new Date(), userCollege));
+  const [chefNote, setChefNote] = useState('');
   const selectedPickupTime = scheduledTime || getDefaultPickupTime(new Date(), userCollege);
 
   const handleAddToCart = async () => {
@@ -40,7 +42,7 @@ export default function ItemDetailScreen() {
       quantity,
       tempPreference: selectedTemp,
       scheduledTime: selectedPickupTime,
-      chefNote: '',
+      chefNote,
     });
     navigation.goBack();
   };
@@ -79,6 +81,29 @@ export default function ItemDetailScreen() {
               </View>
               <Text style={styles.title}>{item.name}</Text>
               <Text style={styles.description}>{item.description}</Text>
+              <View style={styles.reviewRow}>
+                <View style={styles.reviewStat}>
+                  <AppIcon name="star" size={14} color={palette.accent} />
+                  <Text style={styles.reviewStatValue}>
+                    {item.totalReviews > 0 ? item.averageRating.toFixed(1) : 'New'}
+                  </Text>
+                  <Text style={styles.reviewStatText}>
+                    {item.totalReviews > 0 ? `${item.totalReviews} reviews` : 'No reviews yet'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  style={styles.reviewButton}
+                  onPress={() =>
+                    navigation.navigate('ItemReviews', {
+                      menuItemId: item.id,
+                      menuItemName: item.name,
+                    })
+                  }
+                >
+                  <Text style={styles.reviewButtonText}>View Reviews</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {item.tempOptions.length > 0 ? (
@@ -112,6 +137,20 @@ export default function ItemDetailScreen() {
                 compact
                 college={userCollege}
               />
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Chef Note</Text>
+              <TextInput
+                style={styles.noteInput}
+                value={chefNote}
+                onChangeText={setChefNote}
+                placeholder="Extra spicy, no onions, less oil..."
+                placeholderTextColor={palette.subtle}
+                multiline
+                maxLength={200}
+              />
+              <Text style={styles.noteCounter}>{chefNote.length}/200</Text>
             </View>
 
             <View style={styles.section}>
@@ -193,6 +232,39 @@ const styles = StyleSheet.create({
   summaryHeader: {
     gap: 8,
   },
+  reviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  reviewStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reviewStatValue: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  reviewStatText: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  reviewButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: palette.surfaceRaised,
+  },
+  reviewButtonText: {
+    color: palette.accent,
+    fontSize: 12,
+    fontWeight: '800',
+  },
   summaryMeta: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -233,6 +305,23 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 16,
     fontWeight: '800',
+  },
+  noteInput: {
+    minHeight: 84,
+    borderRadius: 18,
+    backgroundColor: palette.surfaceMuted,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: palette.ink,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlignVertical: 'top',
+  },
+  noteCounter: {
+    color: palette.muted,
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'right',
   },
   chipWrap: {
     flexDirection: 'row',

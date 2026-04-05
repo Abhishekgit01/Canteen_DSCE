@@ -1,5 +1,9 @@
-import { Order } from '../models/index.js';
+import { Order, User } from '../models/index.js';
 import { io } from '../server.js';
+import {
+  NotificationTemplates,
+  sendPushNotification,
+} from './notification.service.js';
 import { buildQrToken } from '../utils/qrToken.js';
 import { getOrderQrToken, serializeOrder } from '../utils/order.utils.js';
 
@@ -42,6 +46,17 @@ export async function finalizePaidOrder(order: any, options: FinalizePaidOrderOp
   });
 
   io.to('staff').emit('order:update', { order: serializedOrder });
+
+  const student = await User.findById(order.userId).select('expoPushToken').lean();
+  if (student?.expoPushToken) {
+    const template = NotificationTemplates.orderPaid(String(order._id));
+    sendPushNotification(
+      student.expoPushToken,
+      template.title,
+      template.body,
+      template.data,
+    ).catch((error) => console.error('Order paid push failed:', error));
+  }
 
   return {
     order,

@@ -41,10 +41,10 @@ export default function ForgotPasswordScreen({
     setError('');
 
     try {
-      await authApi.requestPasswordResetOtp({ email: normalizedEmail });
+      const response = await authApi.requestPasswordResetOtp({ email: normalizedEmail });
       navigation.navigate('Otp', {
         email: normalizedEmail,
-        purpose: 'password_reset',
+        purpose: response.data.purpose || 'password_reset',
       });
     } catch (err: any) {
       setError(

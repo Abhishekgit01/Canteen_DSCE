@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -13,7 +14,6 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { menuApi, orderApi } from '../api';
 import AppIcon from '../components/AppIcon';
-import CatLoader from '../components/CatLoader';
 import FoodCard from '../components/FoodCard';
 import PickupTimePanel from '../components/PickupTimePanel';
 import { getCanteenName } from '../constants/colleges';
@@ -208,6 +208,9 @@ export default function CartScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Your Order</Text>
+          <Text style={styles.sectionHint}>
+            Tap any item below to add a note for the chef before checkout.
+          </Text>
           <View style={styles.cardStack}>
             {items.map((item) => {
               const hasChefNote = Boolean(item.chefNote);
@@ -381,7 +384,7 @@ export default function CartScreen() {
         >
           {isCreatingOrder ? (
             <View style={styles.loadingRow}>
-              <CatLoader size="small" />
+              <ActivityIndicator size="small" color={palette.surface} />
               <Text style={styles.checkoutButtonText}>Creating order...</Text>
             </View>
           ) : (
@@ -443,6 +446,11 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 18,
     fontWeight: '800',
+  },
+  sectionHint: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 19,
   },
   cardStack: {
     gap: 14,

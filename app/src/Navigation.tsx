@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, StyleSheet } from 'react-native';
@@ -16,8 +16,10 @@ import TermsOfServiceScreen from './screens/TermsOfServiceScreen';
 import HomeScreen from './screens/HomeScreen';
 import SearchScreen from './screens/SearchScreen';
 import ItemDetailScreen from './screens/ItemDetailScreen';
+import MenuItemReviewsScreen from './screens/MenuItemReviewsScreen';
 import CartScreen from './screens/CartScreen';
 import PaymentScreen from './screens/PaymentScreen';
+import RateOrderScreen from './screens/RateOrderScreen';
 import OrderQRScreen from './screens/OrderQRScreen';
 import OrderSuccessScreen from './screens/OrderSuccessScreen';
 import PaymentSuccessScreen from './screens/PaymentSuccessScreen';
@@ -25,6 +27,12 @@ import OrdersScreen from './screens/OrdersScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ScannerScreen from './screens/ScannerScreen';
 import { connectSocket, disconnectSocket } from './api/socket';
+import { saveExpoPushToken } from './api';
+import {
+  handleInitialNotification,
+  registerForPushNotifications,
+  setupNotificationListeners,
+} from './services/notifications';
 import { useAuthStore } from './stores/authStore';
 import { useCartStore } from './stores/cartStore';
 import { MainTabParamList, RootStackParamList } from './types';
@@ -33,6 +41,7 @@ import AppIcon from './components/AppIcon';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 function TabIcon({ name, focused }: { name: keyof MainTabParamList; focused: boolean }) {
   const colors = {
@@ -120,18 +129,52 @@ export default function Navigation() {
     return undefined;
   }, [token, user]);
 
+  useEffect(() => {
+    const cleanup = setupNotificationListeners(navigationRef);
+    void handleInitialNotification(navigationRef);
+    return cleanup;
+  }, []);
+
+  useEffect(() => {
+    if (!token || !user || user.role !== 'student') {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const syncPushToken = async () => {
+      const expoPushToken = await registerForPushNotifications();
+
+      if (!expoPushToken || cancelled) {
+        return;
+      }
+
+      await saveExpoPushToken(expoPushToken).catch((error) => {
+        console.error('Failed to save Expo push token:', error);
+      });
+    };
+
+    void syncPushToken();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user]);
+
   if (isLoading) {
     return <SplashScreen />;
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {token && user ? (
           <>
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="Search" component={SearchScreen} />
             <Stack.Screen name="ItemDetail" component={ItemDetailScreen} />
+            <Stack.Screen name="ItemReviews" component={MenuItemReviewsScreen} />
+            <Stack.Screen name="RateOrder" component={RateOrderScreen} />
             <Stack.Screen name="Payment" component={PaymentScreen} />
             <Stack.Screen name="OrderQR" component={OrderQRScreen} />
             <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />

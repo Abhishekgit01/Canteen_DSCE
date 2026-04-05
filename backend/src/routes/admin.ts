@@ -4,6 +4,10 @@ import mongoose from 'mongoose';
 import { normalizeCollege, resolveCollege, type SupportedCollege } from '../config/college.js';
 import { Order, User } from '../models/index.js';
 import { io } from '../server.js';
+import {
+  NotificationTemplates,
+  sendPushNotification,
+} from '../services/notification.service.js';
 import { serializeOrder } from '../utils/order.utils.js';
 
 const router = Router();
@@ -174,6 +178,24 @@ router.patch(
         orderId: String(order._id),
         status,
       });
+
+      if (status === 'ready') {
+        const student = await User.findById(order.userId).select('expoPushToken').lean();
+        if (student?.expoPushToken) {
+          const itemNames = Array.isArray(order.items)
+            ? order.items
+                .map((item) => item.name)
+                .filter((itemName): itemName is string => typeof itemName === 'string' && itemName.length > 0)
+            : [];
+          const template = NotificationTemplates.orderReady(itemNames, String(order._id));
+          sendPushNotification(
+            student.expoPushToken,
+            template.title,
+            template.body,
+            template.data,
+          ).catch((error) => console.error('Order ready push failed:', error));
+        }
+      }
 
       // Notify all staff members
       io.to('staff').emit('order:update', { order: serializeOrder(order) });

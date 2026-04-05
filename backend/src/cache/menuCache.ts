@@ -7,7 +7,7 @@ export interface MenuCacheEntry {
 
 export const MENU_CACHE_TTL_MS = 2 * 60 * 1000;
 export const MENU_CACHE_SELECT =
-  'name description imageUrl price calories college category tempOptions isAvailable isFeatured';
+  'name description imageUrl price calories college category tempOptions isAvailable isFeatured averageRating totalReviews ratingBreakdown';
 
 let cache: Partial<Record<SupportedCollege, MenuCacheEntry>> = {};
 

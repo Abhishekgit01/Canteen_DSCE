@@ -3,7 +3,9 @@ import { useAuth } from './hooks/useAuth';
 import LoginPage from './pages/Login';
 import DashboardPage from './pages/Dashboard';
 import MenuPage from './pages/Menu';
+import NotificationsPage from './pages/NotificationsPage';
 import OrdersPage from './pages/Orders';
+import ReviewsPage from './pages/ReviewsPage';
 import RushHoursPage from './pages/RushHours';
 import UsersPage from './pages/Users';
 import Layout from './components/Layout';
@@ -34,6 +36,8 @@ function App() {
         <Route element={<Layout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/menu" element={<MenuPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/reviews" element={<ReviewsPage />} />
           <Route path="/rush-hours" element={<RushHoursPage />} />
         </Route>
       </Route>

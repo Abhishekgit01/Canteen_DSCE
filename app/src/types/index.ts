@@ -33,6 +33,15 @@ export interface MenuItem {
   tempOptions: ('cold' | 'normal' | 'hot')[];
   isAvailable: boolean;
   isFeatured?: boolean;
+  averageRating: number;
+  totalReviews: number;
+  ratingBreakdown: {
+    '1': number;
+    '2': number;
+    '3': number;
+    '4': number;
+    '5': number;
+  };
 }
 
 export interface CartItem {
@@ -63,6 +72,43 @@ export interface Order {
   status: 'pending_payment' | 'paid' | 'preparing' | 'ready' | 'fulfilled' | 'failed';
   qrToken?: string;
   createdAt: string;
+}
+
+export interface Review {
+  id: string;
+  menuItemId: string;
+  orderId: string;
+  menuItem?: {
+    id: string;
+    name: string;
+  };
+  student?: {
+    id: string;
+    name: string;
+    college?: College;
+    email?: string;
+  };
+  college?: College;
+  rating: number;
+  title: string;
+  body: string;
+  tags: string[];
+  helpful: number;
+  isVerified: boolean;
+  isVisible: boolean;
+  createdAt: string;
+}
+
+export interface PendingReviewItem {
+  orderId: string;
+  orderDate: string;
+  menuItem: {
+    id: string;
+    name: string;
+    imageUrl: string;
+    averageRating: number;
+    totalReviews: number;
+  };
 }
 
 export type PaymentMode = 'mock' | 'upi_link' | 'razorpay';
@@ -154,6 +200,8 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
   Search: undefined;
   ItemDetail: { item: MenuItem };
+  ItemReviews: { menuItemId: string; menuItemName?: string };
+  RateOrder: { orderId?: string } | undefined;
   Payment: PaymentInitResponse;
   OrderQR: { orderId: string; qrToken: string };
   OrderSuccess: { orderId: string };
