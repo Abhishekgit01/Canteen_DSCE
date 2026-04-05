@@ -1,6 +1,7 @@
 import './config/env.js';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { DEFAULT_COLLEGE } from './config/college.js';
 import { User, MenuItem } from './models/index.js';
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/canteen';
@@ -169,6 +170,8 @@ const menuItems = [
   },
 ];
 
+const collegeMenuItems = (college: 'DSCE' | 'NIE') => menuItems.map((item) => ({ ...item, college }));
+
 async function seed() {
   try {
     await mongoose.connect(MONGO_URI);
@@ -191,24 +194,33 @@ async function seed() {
     if (userCount === 0) {
       const salt = await bcrypt.genSalt(12);
       await User.create([
-        { name: 'Admin User', email: 'admin@dsce.edu.in', passwordHash: await bcrypt.hash('Admin@123!', salt), usn: '1DS21CS001', role: 'admin', isVerified: true },
-        { name: 'Manager User', email: 'manager@dsce.edu.in', passwordHash: await bcrypt.hash('Manager@123!', salt), usn: '1DS21CS002', role: 'manager', isVerified: true },
-        { name: 'Staff User', email: 'staff@dsce.edu.in', passwordHash: await bcrypt.hash('Staff@123!', salt), usn: '1DS21CS003', role: 'staff', isVerified: true },
-        { name: 'Test Student', email: 'test@dsce.edu.in', passwordHash: await bcrypt.hash('Test@123!', salt), usn: '1DS21CS004', role: 'student', isVerified: true },
-        { name: 'Demo User', email: 'demo@test.com', passwordHash: await bcrypt.hash('Demo@123!', salt), usn: '1DS21CS999', role: 'student', isVerified: true },
+        { name: 'Admin User', email: 'admin@dsce.edu.in', passwordHash: await bcrypt.hash('Admin@123!', salt), usn: '1DS21CS001', role: 'admin', college: DEFAULT_COLLEGE, isVerified: true },
+        { name: 'DSCE Manager', email: 'manager@dsce.edu.in', passwordHash: await bcrypt.hash('Manager@123!', salt), usn: '1DS21CS002', role: 'manager', college: 'DSCE', isVerified: true },
+        { name: 'DSCE Staff', email: 'staff@dsce.edu.in', passwordHash: await bcrypt.hash('Staff@123!', salt), usn: '1DS21CS003', role: 'staff', college: 'DSCE', isVerified: true },
+        { name: 'DSCE Student', email: 'test@dsce.edu.in', passwordHash: await bcrypt.hash('Test@123!', salt), usn: '1DS21CS004', role: 'student', college: 'DSCE', isVerified: true },
+        { name: 'NIE Manager', email: 'manager@nie.edu.in', passwordHash: await bcrypt.hash('Manager@123!', salt), usn: '4IK25CS900', role: 'manager', college: 'NIE', isVerified: true },
+        { name: 'NIE Staff', email: 'staff@nie.edu.in', passwordHash: await bcrypt.hash('Staff@123!', salt), usn: '4IK25CS901', role: 'staff', college: 'NIE', isVerified: true },
+        { name: 'NIE Student', email: 'test@nie.edu.in', passwordHash: await bcrypt.hash('Test@123!', salt), usn: '4IK25CS902', role: 'student', college: 'NIE', isVerified: true },
+        { name: 'Demo User', email: 'demo@test.com', passwordHash: await bcrypt.hash('Demo@123!', salt), usn: '1DS21CS999', role: 'student', college: 'DSCE', isVerified: true },
       ]);
-      console.log('✅ Created 5 seed users:');
+      console.log('✅ Created multi-college seed users:');
       console.log('   admin@dsce.edu.in / Admin@123! (admin)');
-      console.log('   manager@dsce.edu.in / Manager@123! (manager)');
-      console.log('   staff@dsce.edu.in / Staff@123! (staff)');
-      console.log('   test@dsce.edu.in / Test@123! (student)');
-      console.log('   demo@test.com / Demo@123! (student)');
+      console.log('   manager@dsce.edu.in / Manager@123! (DSCE manager)');
+      console.log('   staff@dsce.edu.in / Staff@123! (DSCE staff)');
+      console.log('   test@dsce.edu.in / Test@123! (DSCE student)');
+      console.log('   manager@nie.edu.in / Manager@123! (NIE manager)');
+      console.log('   staff@nie.edu.in / Staff@123! (NIE staff)');
+      console.log('   test@nie.edu.in / Test@123! (NIE student)');
+      console.log('   demo@test.com / Demo@123! (DSCE student)');
     }
 
     // Create menu items if none exist
     if (menuCount === 0) {
-      await MenuItem.insertMany(menuItems);
-      console.log(`✅ Created ${menuItems.length} menu items`);
+      await MenuItem.insertMany([
+        ...collegeMenuItems('DSCE'),
+        ...collegeMenuItems('NIE'),
+      ]);
+      console.log(`✅ Created ${menuItems.length * 2} college-scoped menu items`);
     }
 
     console.log('\n🎉 Seeding completed successfully!');

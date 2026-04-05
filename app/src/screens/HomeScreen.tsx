@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   StyleSheet,
   Text,
@@ -14,7 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { menuApi } from '../api';
 import AppIcon from '../components/AppIcon';
 import FoodCard from '../components/FoodCard';
-import SkeletonCard from '../components/SkeletonCard';
+import MenuSkeleton from '../components/MenuSkeleton';
+import { getCanteenName } from '../constants/colleges';
 import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import { useFavoritesStore } from '../stores/favoritesStore';
@@ -36,21 +36,31 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { user } = useAuthStore();
+  const userCollege = user?.college;
+  const initialMenu = menuApi.getCachedMenu(userCollege);
   const { items, addItem, updateQuantity, total } = useCartStore();
   const { isFavorite } = useFavoritesStore();
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(initialMenu);
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialMenu.length === 0);
   const [errorMessage, setErrorMessage] = useState('');
-  const [rushInfo, setRushInfo] = useState(() => getLunchRushInfo());
+  const [rushInfo, setRushInfo] = useState(() => getLunchRushInfo(new Date(), userCollege));
+  const canteenName = getCanteenName(userCollege);
+
+  useEffect(() => {
+    const cachedMenu = menuApi.getCachedMenu(userCollege);
+    setMenuItems(cachedMenu);
+    setLoading(cachedMenu.length === 0);
+    setRushInfo(getLunchRushInfo(new Date(), userCollege));
+  }, [userCollege]);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setRushInfo(getLunchRushInfo());
+      setRushInfo(getLunchRushInfo(new Date(), userCollege));
     }, 60000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [userCollege]);
 
   useEffect(() => {
     const fetchMenu = async (showLoader = false) => {
@@ -60,7 +70,7 @@ export default function HomeScreen() {
         }
 
         setErrorMessage('');
-        const response = await menuApi.getMenu();
+        const response = await menuApi.getMenu({ college: userCollege });
         setMenuItems(response.data);
       } catch (error) {
         console.error('Failed to fetch menu:', error);
@@ -70,14 +80,14 @@ export default function HomeScreen() {
       }
     };
 
-    void fetchMenu(true);
+    void fetchMenu(initialMenu.length === 0);
 
     const unsubscribe = navigation.addListener('focus', () => {
       void fetchMenu(false);
     });
 
     return unsubscribe;
-  }, [navigation]);
+  }, [initialMenu.length, navigation, userCollege]);
 
   const filteredItems =
     selectedCategory === 'All'
@@ -99,7 +109,7 @@ export default function HomeScreen() {
       menuItem: item,
       quantity: nextQuantity,
       tempPreference: existingItem?.tempPreference || item.tempOptions[0] || 'normal',
-      scheduledTime: existingItem?.scheduledTime || getDefaultPickupTime(),
+      scheduledTime: existingItem?.scheduledTime || getDefaultPickupTime(new Date(), userCollege),
     });
   };
 
@@ -116,7 +126,7 @@ export default function HomeScreen() {
             <AppIcon name="map-pin" size={13} color="rgba(255,255,255,0.72)" />
             <Text style={styles.pickupLabel}>PICKUP FROM</Text>
           </View>
-          <Text style={styles.headerTitle}>DSCE Canteen</Text>
+          <Text style={styles.headerTitle}>{canteenName}</Text>
         </View>
 
         <View style={styles.headerActions}>
@@ -164,7 +174,7 @@ export default function HomeScreen() {
           <View style={styles.infoHint}>
             <AppIcon name="clock" size={12} color={palette.muted} />
             <Text style={styles.infoHintText}>
-              Quick pickup from {formatPickupTime(getDefaultPickupTime())}
+              Quick pickup from {formatPickupTime(getDefaultPickupTime(new Date(), userCollege))}
             </Text>
           </View>
         </View>
@@ -217,15 +227,14 @@ export default function HomeScreen() {
 
       {loading ? (
         <FlatList
-          data={[1, 2, 3, 4, 5]}
+          data={[0]}
           keyExtractor={(i) => i.toString()}
           contentContainerStyle={[
             styles.menuList,
             { paddingBottom: tabBarHeight + 18 },
           ]}
           ListHeaderComponent={renderHeader}
-          renderItem={() => <SkeletonCard />}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          renderItem={() => <MenuSkeleton count={5} />}
           scrollEnabled={false}
         />
       ) : (

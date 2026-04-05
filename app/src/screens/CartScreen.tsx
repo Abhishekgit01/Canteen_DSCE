@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -14,8 +13,11 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { menuApi, orderApi } from '../api';
 import AppIcon from '../components/AppIcon';
+import CatLoader from '../components/CatLoader';
 import FoodCard from '../components/FoodCard';
 import PickupTimePanel from '../components/PickupTimePanel';
+import { getCanteenName } from '../constants/colleges';
+import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import { MainTabNavigationProp, MenuItem } from '../types';
 import { palette, shadows } from '../theme';
@@ -32,16 +34,20 @@ function getErrorMessage(error: any) {
 export default function CartScreen() {
   const navigation = useNavigation<MainTabNavigationProp<'Cart'>>();
   const insets = useSafeAreaInsets();
+  const { user } = useAuthStore();
+  const userCollege = user?.college;
   const { items, addItem, updateQuantity, setScheduledTime, total } = useCartStore();
   const [suggestedItems, setSuggestedItems] = useState<MenuItem[]>([]);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [selectedPickupTime, setSelectedPickupTime] = useState(items[0]?.scheduledTime || getDefaultPickupTime());
+  const [selectedPickupTime, setSelectedPickupTime] = useState(
+    items[0]?.scheduledTime || getDefaultPickupTime(new Date(), userCollege),
+  );
 
   useEffect(() => {
     const loadSuggestions = async () => {
       try {
-        const response = await menuApi.getMenu();
+        const response = await menuApi.getMenu({ college: userCollege });
         const cartItemIds = new Set(items.map((item) => item.menuItem.id));
         setSuggestedItems(response.data.filter((item: MenuItem) => !cartItemIds.has(item.id)).slice(0, 6));
       } catch (error) {
@@ -50,15 +56,16 @@ export default function CartScreen() {
     };
 
     void loadSuggestions();
-  }, [items]);
+  }, [items, userCollege]);
 
   useEffect(() => {
-    const currentPickupTime = items[0]?.scheduledTime || getDefaultPickupTime();
+    const currentPickupTime = items[0]?.scheduledTime || getDefaultPickupTime(new Date(), userCollege);
     setSelectedPickupTime(currentPickupTime);
-  }, [items]);
+  }, [items, userCollege]);
 
   const subtotal = total();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+  const canteenName = getCanteenName(user?.college);
 
   const handleCreateOrder = async () => {
     if (items.length === 0 || isCreatingOrder) {
@@ -104,7 +111,10 @@ export default function CartScreen() {
       menuItem: item,
       quantity: nextQuantity,
       tempPreference: existingItem?.tempPreference || item.tempOptions[0] || 'normal',
-      scheduledTime: existingItem?.scheduledTime || selectedPickupTime || getDefaultPickupTime(),
+      scheduledTime:
+        existingItem?.scheduledTime ||
+        selectedPickupTime ||
+        getDefaultPickupTime(new Date(), userCollege),
     });
   };
 
@@ -151,7 +161,7 @@ export default function CartScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>Checkout</Text>
-            <Text style={styles.headerSubtitle}>DSCE Canteen · {totalItems} items</Text>
+            <Text style={styles.headerSubtitle}>{canteenName} · {totalItems} items</Text>
           </View>
           <View style={styles.headerBadge}>
             <Text style={styles.headerBadgeText}>Fast pickup</Text>
@@ -163,6 +173,7 @@ export default function CartScreen() {
             value={selectedPickupTime}
             onChange={handlePickupTimeChange}
             contextLabel="Selected for the whole order"
+            college={userCollege}
           />
         </View>
 
@@ -304,7 +315,7 @@ export default function CartScreen() {
         >
           {isCreatingOrder ? (
             <View style={styles.loadingRow}>
-              <ActivityIndicator size="small" color={palette.surface} />
+              <CatLoader size="small" />
               <Text style={styles.checkoutButtonText}>Creating order...</Text>
             </View>
           ) : (
@@ -568,7 +579,7 @@ const styles = StyleSheet.create({
   loadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   emptyWrap: {
     flex: 1,

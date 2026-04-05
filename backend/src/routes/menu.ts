@@ -1,10 +1,18 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import { DEFAULT_COLLEGE, normalizeCollege, resolveCollege, type SupportedCollege } from '../config/college.js';
+import {
+  clearMenuCache,
+  getMenuCache,
+  MENU_CACHE_SELECT,
+  setMenuCache,
+} from '../cache/menuCache.js';
 import { MenuItem, User } from '../models/index.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not set in environment variables');
 const categories = ['meals', 'snacks', 'beverages', 'desserts'] as const;
 const temperatureOptions = ['cold', 'normal', 'hot'] as const;
 
@@ -14,6 +22,7 @@ interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     role: UserRole;
+    college: SupportedCollege;
   };
 }
 
@@ -28,7 +37,12 @@ type MenuBody = {
   isAvailable?: boolean;
   isFeatured?: boolean;
   preparationMinutes?: number;
+  college?: string;
 };
+
+export function invalidateMenuCache(college?: SupportedCollege) {
+  clearMenuCache(college);
+}
 
 function requireRoles(roles: UserRole[]) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -48,8 +62,8 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
-    const user = await User.findById(decoded.id).select('_id role');
+    const decoded = jwt.verify(token, JWT_SECRET as string) as unknown as { id: string };
+    const user = await User.findById(decoded.id).select('_id role college').lean();
 
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
@@ -58,6 +72,7 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
     req.user = {
       id: String(user._id),
       role: user.role as UserRole,
+      college: resolveCollege(user.college),
     };
 
     next();
@@ -172,10 +187,33 @@ function validateMenuPayload(input: MenuBody, isPartial = false) {
   return { errors, payload };
 }
 
+function getMenuCollege(req: Request) {
+  return normalizeCollege(req.query.college) || DEFAULT_COLLEGE;
+}
+
+function getMutationCollege(req: AuthenticatedRequest, requestedCollege?: unknown): SupportedCollege {
+  if (req.user?.role === 'admin') {
+    return normalizeCollege(requestedCollege) || req.user.college;
+  }
+
+  return req.user?.college || DEFAULT_COLLEGE;
+}
+
 router.get('/', async (_req: Request, res: Response) => {
   try {
-    const items = await MenuItem.find({ isAvailable: true }).sort({ category: 1, name: 1 });
-    res.json(items);
+    const college = getMenuCollege(_req);
+    const cachedMenu = getMenuCache(college);
+    if (cachedMenu) {
+      return res.set('X-Cache', 'HIT').json(cachedMenu);
+    }
+
+    const items = await MenuItem.find({ college, isAvailable: true })
+      .select(MENU_CACHE_SELECT)
+      .sort({ category: 1, name: 1 })
+      .lean();
+
+    setMenuCache(college, items);
+    res.set('X-Cache', 'MISS').json(items);
   } catch {
     res.status(500).json({ error: 'Failed to fetch menu' });
   }
@@ -197,7 +235,9 @@ router.post(
         return res.status(400).json({ error: errors.join('. ') });
       }
 
-      const item = await MenuItem.create(payload);
+      const college = getMutationCollege(req, req.body?.college);
+      const item = await MenuItem.create({ ...payload, college });
+      invalidateMenuCache(college);
       res.status(201).json(item);
     } catch {
       res.status(500).json({ error: 'Failed to create menu item' });
@@ -225,6 +265,16 @@ router.patch(
         return res.status(400).json({ error: 'No valid fields provided for update' });
       }
 
+      const existingItem = await MenuItem.findById(req.params.id);
+
+      if (!existingItem) {
+        return res.status(404).json({ error: 'Menu item not found' });
+      }
+
+      if (req.user?.role !== 'admin' && resolveCollege(existingItem.college) !== req.user?.college) {
+        return res.status(403).json({ error: 'Not authorized for this college menu' });
+      }
+
       const item = await MenuItem.findByIdAndUpdate(req.params.id, payload, {
         new: true,
         runValidators: true,
@@ -234,6 +284,7 @@ router.patch(
         return res.status(404).json({ error: 'Menu item not found' });
       }
 
+      invalidateMenuCache(resolveCollege(item.college));
       res.json(item);
     } catch {
       res.status(500).json({ error: 'Failed to update menu item' });
@@ -244,23 +295,30 @@ router.patch(
 router.delete(
   '/:id',
   requireAuth,
-  requireRoles(['admin']),
+  requireRoles(['manager', 'admin']),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
         return res.status(400).json({ error: 'Invalid menu item ID' });
       }
 
-      const item = await MenuItem.findByIdAndUpdate(
-        req.params.id,
-        { isAvailable: false },
-        { new: true },
-      );
+      const existingItem = await MenuItem.findById(req.params.id);
+
+      if (!existingItem) {
+        return res.status(404).json({ error: 'Menu item not found' });
+      }
+
+      if (req.user?.role !== 'admin' && resolveCollege(existingItem.college) !== req.user?.college) {
+        return res.status(403).json({ error: 'Not authorized for this college menu' });
+      }
+
+      const item = await MenuItem.findByIdAndUpdate(req.params.id, { isAvailable: false }, { new: true });
 
       if (!item) {
         return res.status(404).json({ error: 'Menu item not found' });
       }
 
+      invalidateMenuCache(resolveCollege(item.college));
       res.json({ success: true, item });
     } catch {
       res.status(500).json({ error: 'Failed to delete menu item' });

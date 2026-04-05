@@ -1,3 +1,4 @@
+import { normalizeCollege } from '../constants/colleges';
 import type { CartItem, MenuItem } from '../types';
 import { getDefaultPickupTime } from './pickupTime';
 
@@ -56,6 +57,7 @@ export function normalizeMenuItem(value: unknown): MenuItem | null {
     imageUrl: toTrimmedString(value.imageUrl),
     price: toNumber(value.price),
     calories: toNumber(value.calories),
+    college: normalizeCollege(toTrimmedString(value.college)) || undefined,
     category,
     tempOptions,
     isAvailable: value.isAvailable !== false,
@@ -89,7 +91,8 @@ export function normalizeCartItem(value: unknown): CartItem | null {
       ? requestedTemp
       : menuItem.tempOptions[0] || 'normal';
 
-  const scheduledTime = toTrimmedString(value.scheduledTime) || getDefaultPickupTime();
+  const scheduledTime =
+    toTrimmedString(value.scheduledTime) || getDefaultPickupTime(new Date(), menuItem.college);
 
   return {
     menuItem,

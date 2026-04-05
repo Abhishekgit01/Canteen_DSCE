@@ -2,16 +2,19 @@ import { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import { resolveCollege, type SupportedCollege } from '../config/college.js';
 import { io } from '../server.js';
 import { MenuItem, Order, User } from '../models/index.js';
 import { createRazorpayOrder, initiatePayment } from '../services/payment.service.js';
 import { finalizeOrder, finalizePaidOrder } from '../services/order-payment.service.js';
 import { serializeOrder } from '../utils/order.utils.js';
 import { getPaymentMode, PaymentMode } from '../utils/paymentMode.js';
+import { isPickupTimeAllowed } from '../utils/pickupTime.js';
 import { hashQrToken, verifyQrToken } from '../utils/qrToken.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not set in environment variables');
 
 type UserRole = 'student' | 'staff' | 'manager' | 'admin';
 
@@ -19,6 +22,7 @@ interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     role: UserRole;
+    college: SupportedCollege;
   };
 }
 
@@ -55,8 +59,8 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
-    const user = await User.findById(decoded.id).select('_id role');
+    const decoded = jwt.verify(token, JWT_SECRET as string) as unknown as { id: string };
+    const user = await User.findById(decoded.id).select('_id role college').lean();
 
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
@@ -65,6 +69,7 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
     req.user = {
       id: String(user._id),
       role: user.role as UserRole,
+      college: resolveCollege(user.college),
     };
 
     next();
@@ -87,7 +92,7 @@ function getPaymentConfigResponse() {
   return {
     mode,
     canteenUpiId: mode === 'upi_link' ? process.env.CANTEEN_UPI_ID || 'canteen@upi' : undefined,
-    canteenName: mode === 'upi_link' ? process.env.CANTEEN_NAME || 'DSCE+Canteen' : undefined,
+    canteenName: mode === 'upi_link' ? process.env.CANTEEN_NAME || 'Campus+Canteen' : undefined,
   };
 }
 
@@ -194,7 +199,7 @@ router.get('/payment-config', requireAuth, (_req: AuthenticatedRequest, res: Res
 
 router.get('/my', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const orders = await Order.find({ userId: req.user!.id }).sort({ createdAt: -1 });
+    const orders = await Order.find({ userId: req.user!.id }).sort({ createdAt: -1 }).lean();
     res.json(orders.map((order) => serializeOrder(order)));
   } catch {
     res.status(500).json({ error: 'Failed to fetch orders' });
@@ -203,7 +208,7 @@ router.get('/my', requireAuth, async (req: AuthenticatedRequest, res: Response) 
 
 router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const order = await Order.findById(req.params.id).select('+qrTokenHash');
+    const order = await Order.findById(req.params.id).select('+qrTokenHash').lean();
 
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -231,6 +236,7 @@ router.post(
 
     try {
       const { items, scheduledTime } = req.body as CreateOrderBody;
+      const college = req.user!.college;
       const resolvedScheduledTime =
         typeof scheduledTime === 'string' && scheduledTime.trim()
           ? scheduledTime.trim()
@@ -238,6 +244,10 @@ router.post(
 
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'At least one item is required' });
+      }
+
+      if (!isPickupTimeAllowed(resolvedScheduledTime, college)) {
+        return res.status(400).json({ error: `Pickup time is outside the ${college} canteen window` });
       }
 
       const orderItems = [];
@@ -253,7 +263,7 @@ router.post(
         }
 
         const menuItem = await MenuItem.findById(requestedMenuItemId);
-        if (!menuItem || !menuItem.isAvailable) {
+        if (!menuItem || !menuItem.isAvailable || resolveCollege(menuItem.college) !== college) {
           return res.status(400).json({ error: 'One or more items are unavailable' });
         }
 
@@ -290,6 +300,7 @@ router.post(
         totalAmount: Number(totalAmount.toFixed(2)),
         status: 'pending_payment',
         paymentStatus: 'pending',
+        college,
       });
 
       if (getPaymentMode() === 'razorpay') {
@@ -502,6 +513,10 @@ router.post(
       const order = await Order.findById(orderId).select('+qrTokenHash');
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (req.user?.role !== 'admin' && resolveCollege(order.college) !== req.user?.college) {
+        return res.status(403).json({ error: 'Not authorized for this college order' });
       }
 
       const decoded = verifyQrToken(qrToken);

@@ -73,13 +73,13 @@ export async function initiatePayment(order: { _id: unknown; totalAmount: number
 
   if (mode === 'upi_link') {
     const canteenUpiId = process.env.CANTEEN_UPI_ID || 'canteen@upi';
-    const canteenName = process.env.CANTEEN_NAME || 'DSCE+Canteen';
+    const canteenName = process.env.CANTEEN_NAME || 'Campus+Canteen';
     const params = new URLSearchParams({
       pa: canteenUpiId,
       pn: canteenName,
       am: order.totalAmount.toFixed(2),
       cu: 'INR',
-      tn: `DSCE-ORDER-${orderId}`,
+      tn: `CANTEEN-ORDER-${orderId}`,
       tr: orderId,
     });
 

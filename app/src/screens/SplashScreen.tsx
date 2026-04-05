@@ -1,11 +1,12 @@
 import React from 'react';
-import { View, Image, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Image, StyleSheet } from 'react-native';
+import CatLoader from '../components/CatLoader';
 
 export default function SplashScreen() {
   return (
     <View style={styles.container}>
       <Image source={require('../../assets/splash-icon.png')} style={styles.logo} resizeMode="contain" />
-      <ActivityIndicator color="#f97316" style={styles.loader} />
+      <CatLoader size="small" variant="inverse" message="Warming up the canteen..." />
     </View>
   );
 }
@@ -20,8 +21,5 @@ const styles = StyleSheet.create({
   logo: {
     width: 180,
     height: 180,
-  },
-  loader: {
-    marginTop: 24,
   },
 });

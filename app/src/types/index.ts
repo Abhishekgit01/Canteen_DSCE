@@ -28,6 +28,7 @@ export interface MenuItem {
   imageUrl: string;
   price: number;
   calories: number;
+  college?: College;
   category: 'meals' | 'snacks' | 'beverages' | 'desserts';
   tempOptions: ('cold' | 'normal' | 'hot')[];
   isAvailable: boolean;
@@ -120,6 +121,7 @@ export type RootStackParamList = {
     | undefined;
   Otp: { email: string; purpose: OtpPurpose };
   ForgotPassword: { prefilledEmail?: string } | undefined;
+  PrivacyPolicy: undefined;
   GoogleCollegeSelect: {
     idToken?: string;
     accessToken?: string;

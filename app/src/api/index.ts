@@ -1,7 +1,8 @@
 import axios, { type AxiosResponse } from 'axios';
 import { NativeModules, Platform } from 'react-native';
+import { DEFAULT_COLLEGE, normalizeCollege } from '../constants/colleges';
 import { useAuthStore } from '../stores/authStore';
-import type { College, Order, PaymentInitResponse, PaymentMode, User } from '../types';
+import type { College, MenuItem, Order, PaymentInitResponse, PaymentMode, User } from '../types';
 import { normalizeMenuItems } from '../utils/menu';
 
 const normalizeOrigin = (value?: string | null): string | null => {
@@ -49,7 +50,14 @@ export const API_CONFIG_ERROR =
     ? null
     : 'This build is missing EXPO_PUBLIC_API_URL. Point it to your public backend URL and rebuild the app.';
 
-const API_ORIGIN = configuredOrigin || inferredOrigin || 'https://invalid.localhost';
+const MENU_CACHE_TTL_MS = 2 * 60 * 1000;
+
+type MenuCacheEntry = {
+  data: MenuItem[];
+  cachedAt: number;
+};
+
+export const API_ORIGIN = configuredOrigin || inferredOrigin || 'https://invalid.localhost';
 const PAYMENT_API_ORIGIN = configuredPaymentOrigin || API_ORIGIN;
 
 export const API_BASE = `${API_ORIGIN}/api`;
@@ -59,6 +67,9 @@ const api = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
 });
+
+let menuCache: Partial<Record<College, MenuCacheEntry>> = {};
+let menuRequest: Partial<Record<College, Promise<MenuItem[]>>> = {};
 
 api.interceptors.request.use(async (config) => {
   const token = useAuthStore.getState().token;
@@ -85,6 +96,62 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+function resolveMenuCollege(college?: string | null): College {
+  return normalizeCollege(college) || DEFAULT_COLLEGE;
+}
+
+function getFreshMenuCache(college?: string | null) {
+  const resolvedCollege = resolveMenuCollege(college);
+  const cachedEntry = menuCache[resolvedCollege];
+
+  if (!cachedEntry) {
+    return null;
+  }
+
+  if (Date.now() - cachedEntry.cachedAt >= MENU_CACHE_TTL_MS) {
+    delete menuCache[resolvedCollege];
+    return null;
+  }
+
+  return cachedEntry.data;
+}
+
+async function fetchMenuData(college?: string | null, force = false) {
+  const resolvedCollege = resolveMenuCollege(college);
+
+  if (!force) {
+    const cachedMenu = getFreshMenuCache(resolvedCollege);
+    if (cachedMenu) {
+      return cachedMenu;
+    }
+  }
+
+  const pendingRequest = menuRequest[resolvedCollege];
+  if (pendingRequest) {
+    return pendingRequest;
+  }
+
+  menuRequest[resolvedCollege] = api
+    .get('/menu', {
+      params: {
+        college: resolvedCollege,
+      },
+    })
+    .then((response) => {
+      const data = normalizeMenuItems(response.data);
+      menuCache[resolvedCollege] = {
+        data,
+        cachedAt: Date.now(),
+      };
+      return data;
+    })
+    .finally(() => {
+      delete menuRequest[resolvedCollege];
+    });
+
+  return menuRequest[resolvedCollege]!;
+}
 
 type RazorpayCreateOrderResponse = {
   order: Order;
@@ -132,8 +199,10 @@ type SignupResponse =
     } & AuthResponse);
 
 export const authApi = {
-  lookupStudent: (usn: string) =>
-    api.get<{ usn: string; name: string }>(`/auth/student/${encodeURIComponent(usn)}`),
+  lookupStudent: (usn: string, college: College) =>
+    api.get<{ usn: string; name: string }>(`/auth/student/${encodeURIComponent(usn)}`, {
+      params: { college },
+    }),
   signup: (data: { usn: string; email: string; password: string; name?: string; college: College }) =>
     api.post<SignupResponse>('/auth/signup', data),
   verifyOtp: (data: { email: string; code: string }) =>
@@ -153,14 +222,23 @@ export const authApi = {
 };
 
 export const menuApi = {
-  getMenu: async () => {
-    const response = await api.get('/menu');
+  getMenu: async (options?: { force?: boolean; college?: string | null }) => {
+    const data = await fetchMenuData(options?.college, options?.force);
     return {
-      ...response,
-      data: normalizeMenuItems(response.data),
+      data,
     };
   },
+  prefetchMenu: async (college?: string | null) => fetchMenuData(college),
+  getCachedMenu: (college?: string | null) => getFreshMenuCache(college) || [],
 };
+
+export async function warmupBackend() {
+  if (!configuredOrigin && !inferredOrigin) {
+    return;
+  }
+
+  await fetch(`${API_ORIGIN}/warmup`).catch(() => undefined);
+}
 
 export const orderApi = {
   createOrder: async (data: { items: any[]; scheduledTime: string }): Promise<AxiosResponse<PaymentInitResponse>> => {

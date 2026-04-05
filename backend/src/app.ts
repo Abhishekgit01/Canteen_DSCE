@@ -1,11 +1,13 @@
 import './config/env.js';
 import express from 'express';
 import helmet from 'helmet';
+import compression from 'compression';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
 import mongoose from 'mongoose';
+import { MenuItem } from './models/index.js';
 import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
@@ -24,6 +26,21 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || [
 
 // 1. Helmet - security headers
 app.use(helmet());
+
+// Compress JSON responses before they leave the server.
+app.use(
+  compression({
+    level: 6,
+    threshold: 1024,
+    filter: (req, res) => {
+      if (req.headers['x-no-compression']) {
+        return false;
+      }
+
+      return compression.filter(req, res);
+    },
+  }),
+);
 
 // 2. CORS
 app.use(cors({
@@ -116,13 +133,23 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     paymentMode: process.env.PAYMENT_MODE || 'mock',
+    uptime: `${Math.floor(process.uptime())}s`,
   });
+});
+
+app.get('/warmup', async (_req, res) => {
+  try {
+    await MenuItem.findOne().select('_id').lean();
+    res.json({ status: 'warm' });
+  } catch {
+    res.json({ status: 'cold' });
+  }
 });
 
 // Root route for Razorpay verification
 app.get('/', (_req, res) => {
   res.json({ 
-    name: 'DSCE Canteen API',
+    name: 'Campus Canteen API',
     status: 'online',
     version: '1.0.0',
     endpoints: {

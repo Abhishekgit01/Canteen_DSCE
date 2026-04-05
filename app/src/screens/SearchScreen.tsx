@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -14,6 +13,9 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { menuApi } from '../api';
 import AppIcon from '../components/AppIcon';
+import MenuItemSkeleton from '../components/MenuItemSkeleton';
+import { CAT_MESSAGES } from '../constants/loading';
+import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import { MenuItem, RootStackNavigationProp } from '../types';
 import { palette, shadows } from '../theme';
@@ -24,6 +26,8 @@ const defaultRecentSearches = ['Maggi', 'Biryani', 'Cold Coffee'];
 export default function SearchScreen() {
   const navigation = useNavigation<RootStackNavigationProp<'Search'>>();
   const insets = useSafeAreaInsets();
+  const { user } = useAuthStore();
+  const userCollege = user?.college;
   const { items, addItem, total } = useCartStore();
   const [query, setQuery] = useState('');
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -34,7 +38,7 @@ export default function SearchScreen() {
   useEffect(() => {
     const loadMenu = async () => {
       try {
-        const response = await menuApi.getMenu();
+        const response = await menuApi.getMenu({ college: userCollege });
         setMenuItems(response.data);
         setErrorMessage('');
       } catch (error) {
@@ -46,7 +50,7 @@ export default function SearchScreen() {
     };
 
     void loadMenu();
-  }, []);
+  }, [userCollege]);
 
   const trendingItems = useMemo(() => {
     const top = menuItems.slice(0, 5).map((item) => item.name);
@@ -99,7 +103,7 @@ export default function SearchScreen() {
       menuItem: item,
       quantity: nextQuantity,
       tempPreference: existingItem?.tempPreference || item.tempOptions[0] || 'normal',
-      scheduledTime: existingItem?.scheduledTime || getDefaultPickupTime(),
+      scheduledTime: existingItem?.scheduledTime || getDefaultPickupTime(new Date(), userCollege),
     });
   };
 
@@ -146,8 +150,8 @@ export default function SearchScreen() {
 
         {loading ? (
           <View style={styles.centerState}>
-            <ActivityIndicator size="large" color={palette.accent} />
-            <Text style={styles.stateText}>Loading menu...</Text>
+            <MenuItemSkeleton count={4} />
+            <Text style={styles.stateText}>{CAT_MESSAGES.menu}</Text>
           </View>
         ) : normalizedQuery.length > 1 ? (
           <View style={styles.resultsList}>

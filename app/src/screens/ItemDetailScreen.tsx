@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppIcon from '../components/AppIcon';
 import PickupTimePanel from '../components/PickupTimePanel';
 import { useFavoritesStore } from '../stores/favoritesStore';
+import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import { RootStackNavigationProp, RootStackRouteProp } from '../types';
 import { palette, shadows } from '../theme';
@@ -23,13 +24,15 @@ export default function ItemDetailScreen() {
   const navigation = useNavigation<RootStackNavigationProp<'ItemDetail'>>();
   const insets = useSafeAreaInsets();
   const { item } = route.params;
+  const { user } = useAuthStore();
+  const userCollege = user?.college || item.college;
   const { addItem } = useCartStore();
   const { isFavorite, toggleFavorite } = useFavoritesStore();
 
   const [selectedTemp, setSelectedTemp] = useState(item.tempOptions[0] || 'normal');
   const [quantity, setQuantity] = useState(1);
-  const [scheduledTime, setScheduledTime] = useState(getDefaultPickupTime());
-  const selectedPickupTime = scheduledTime || getDefaultPickupTime();
+  const [scheduledTime, setScheduledTime] = useState(getDefaultPickupTime(new Date(), userCollege));
+  const selectedPickupTime = scheduledTime || getDefaultPickupTime(new Date(), userCollege);
 
   const handleAddToCart = async () => {
     await addItem({
@@ -106,6 +109,7 @@ export default function ItemDetailScreen() {
                 onChange={setScheduledTime}
                 contextLabel="Add this item for"
                 compact
+                college={userCollege}
               />
             </View>
 

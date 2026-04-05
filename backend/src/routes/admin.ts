@@ -1,12 +1,14 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import { normalizeCollege, resolveCollege, type SupportedCollege } from '../config/college.js';
 import { Order, User } from '../models/index.js';
 import { io } from '../server.js';
 import { serializeOrder } from '../utils/order.utils.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not set in environment variables');
 
 type UserRole = 'student' | 'staff' | 'manager' | 'admin';
 
@@ -17,6 +19,7 @@ interface AuthenticatedRequest extends Request {
     name: string;
     email: string;
     usn: string;
+    college: SupportedCollege;
   };
 }
 
@@ -38,14 +41,17 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as { id?: string; userId?: string };
+    const decoded = jwt.verify(token, JWT_SECRET as string) as jwt.JwtPayload & {
+      id?: string;
+      userId?: string;
+    };
     const userId = decoded.id || decoded.userId;
 
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
-    const user = await User.findById(userId).select('_id role name email usn');
+    const user = await User.findById(userId).select('_id role name email usn college');
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
@@ -56,6 +62,7 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
       name: user.name,
       email: user.email,
       usn: user.usn,
+      college: resolveCollege(user.college),
     };
 
     next();
@@ -66,7 +73,7 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
 
 router.get('/profile', requireAuth, requireRoles(['staff', 'manager', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = await User.findById(req.user!.id).select('_id name email usn role createdAt');
+    const user = await User.findById(req.user!.id).select('_id name email usn role college createdAt');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -78,6 +85,7 @@ router.get('/profile', requireAuth, requireRoles(['staff', 'manager', 'admin']),
       email: user.email,
       usn: user.usn,
       role: user.role,
+      college: resolveCollege(user.college),
       createdAt: user.createdAt,
     });
   } catch {
@@ -89,11 +97,19 @@ router.get(
   '/orders',
   requireAuth,
   requireRoles(['staff', 'manager', 'admin']),
-  async (_req: AuthenticatedRequest, res: Response) => {
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const orders = await Order.find({})
+      const requestedCollege = normalizeCollege(req.query.college);
+      const collegeFilter =
+        req.user?.role === 'admin'
+          ? requestedCollege
+            ? { college: requestedCollege }
+            : {}
+          : { college: req.user!.college };
+
+      const orders = await Order.find(collegeFilter)
         .sort({ createdAt: -1 })
-        .populate('userId', 'usn name');
+        .populate('userId', 'usn name college');
 
       res.json(
         orders.map((order: any) => ({
@@ -101,6 +117,7 @@ router.get(
           userId: {
             usn: order.userId?.usn || 'N/A',
             name: order.userId?.name || 'Unknown',
+            college: resolveCollege(order.userId?.college),
           },
           items: Array.isArray(order.items)
             ? order.items.map((item: any) => ({
@@ -110,6 +127,7 @@ router.get(
             : [],
           totalAmount: order.totalAmount,
           status: order.status,
+          college: resolveCollege(order.college),
           createdAt: order.createdAt,
         })),
       );
@@ -141,6 +159,10 @@ router.patch(
         return res.status(404).json({ error: 'Order not found' });
       }
 
+      if (req.user?.role !== 'admin' && resolveCollege(order.college) !== req.user?.college) {
+        return res.status(403).json({ error: 'Not authorized for this college order' });
+      }
+
       order.status = status as typeof order.status;
       await order.save();
 
@@ -164,7 +186,7 @@ router.get(
   '/stats',
   requireAuth,
   requireRoles(['manager', 'admin']),
-  async (_req: AuthenticatedRequest, res: Response) => {
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
@@ -173,11 +195,20 @@ router.get(
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
       sevenDaysAgo.setHours(0, 0, 0, 0);
 
+      const requestedCollege = normalizeCollege(req.query.college);
+      const collegeMatch =
+        req.user?.role === 'admin'
+          ? requestedCollege
+            ? { college: requestedCollege }
+            : {}
+          : { college: req.user!.college };
+
       const [ordersToday, revenueResult, pendingOrders, popularItems, revenueHistory] = await Promise.all([
-        Order.countDocuments({ createdAt: { $gte: startOfDay } }),
+        Order.countDocuments({ ...collegeMatch, createdAt: { $gte: startOfDay } }),
         Order.aggregate([
           {
             $match: {
+              ...collegeMatch,
               createdAt: { $gte: startOfDay },
               status: { $in: ['paid', 'preparing', 'ready', 'fulfilled'] },
             },
@@ -189,8 +220,9 @@ router.get(
             },
           },
         ]),
-        Order.countDocuments({ status: { $in: ['paid', 'preparing', 'ready'] } }),
+        Order.countDocuments({ ...collegeMatch, status: { $in: ['paid', 'preparing', 'ready'] } }),
         Order.aggregate([
+          { $match: collegeMatch },
           { $unwind: '$items' },
           {
             $group: {
@@ -204,6 +236,7 @@ router.get(
         Order.aggregate([
           {
             $match: {
+              ...collegeMatch,
               createdAt: { $gte: sevenDaysAgo },
               status: { $in: ['paid', 'preparing', 'ready', 'fulfilled'] },
             },
@@ -220,6 +253,7 @@ router.get(
 
       res.json({
         ordersToday,
+        college: requestedCollege || req.user?.college,
         revenueToday: revenueResult[0]?.total || 0,
         pendingOrders,
         popularItem: popularItems[0]?._id || 'None',
@@ -241,7 +275,7 @@ router.get(
   async (_req: AuthenticatedRequest, res: Response) => {
     try {
       const users = await User.find({})
-        .select('_id name usn email role createdAt')
+        .select('_id name usn email role college createdAt')
         .sort({ createdAt: -1 });
 
       res.json(
@@ -251,6 +285,7 @@ router.get(
           usn: user.usn,
           email: user.email,
           role: user.role,
+          college: resolveCollege(user.college),
           createdAt: user.createdAt,
         })),
       );
@@ -285,7 +320,7 @@ router.patch(
         req.params.id,
         { role },
         { new: true, runValidators: true },
-      ).select('_id name usn email role createdAt');
+      ).select('_id name usn email role college createdAt');
 
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
@@ -297,6 +332,7 @@ router.patch(
         usn: user.usn,
         email: user.email,
         role: user.role,
+        college: resolveCollege(user.college),
         createdAt: user.createdAt,
       });
     } catch {

@@ -11,6 +11,8 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import type { RootStackScreenProps } from '../types';
 import { API_CONFIG_ERROR, authApi } from '../api';
+import LoadingOverlay from '../components/LoadingOverlay';
+import { CAT_MESSAGES } from '../constants/loading';
 import { palette, shadows } from '../theme';
 
 export default function ForgotPasswordScreen({
@@ -103,6 +105,7 @@ export default function ForgotPasswordScreen({
           <Text style={styles.link}>Back to login</Text>
         </TouchableOpacity>
       </View>
+      <LoadingOverlay visible={loading} message={CAT_MESSAGES.otp} />
     </KeyboardAvoidingView>
   );
 }

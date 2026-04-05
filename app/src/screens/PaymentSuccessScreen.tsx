@@ -15,6 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
 import QRCode from 'react-native-qrcode-svg';
+import { getCollegeFullName } from '../constants/colleges';
 import type { RootStackNavigationProp, RootStackRouteProp } from '../types';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -100,7 +101,7 @@ export default function PaymentSuccessScreen() {
           
           <View style={styles.row}>
             <Text style={styles.studentName}>{params.studentName}</Text>
-            <Text style={styles.collegeText}>{params.college}</Text>
+            <Text style={styles.collegeText}>{getCollegeFullName(params.college)}</Text>
           </View>
           <View style={styles.divider} />
           

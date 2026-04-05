@@ -12,6 +12,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { disconnectSocket } from '../api/socket';
 import AppIcon from '../components/AppIcon';
+import { getCollegeFullName, getCollegeName } from '../constants/colleges';
 import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import { MainTabNavigationProp } from '../types';
@@ -42,7 +43,7 @@ export default function ProfileScreen() {
   const handleCampusAccount = () => {
     Alert.alert(
       'Campus Account',
-      `${user?.name || 'Campus Student'}\n${user?.usn || ''}\n${user?.email || ''}\n${user?.college || 'College not set'}`,
+      `${user?.name || `${getCollegeName(user?.college)} Student`}\n${user?.usn || ''}\n${user?.email || ''}\n${user?.college ? getCollegeFullName(user.college) : 'College not set'}`,
     );
   };
 
@@ -114,10 +115,10 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.profileTextWrap}>
-            <Text style={styles.name}>{user?.name || 'DSCE Student'}</Text>
+            <Text style={styles.name}>{user?.name || `${getCollegeName(user?.college)} Student`}</Text>
             <Text style={styles.meta}>{user?.usn}</Text>
             <Text style={styles.meta}>{user?.email}</Text>
-            {user?.college ? <Text style={styles.meta}>{user.college}</Text> : null}
+            {user?.college ? <Text style={styles.meta}>{getCollegeFullName(user.college)}</Text> : null}
           </View>
         </View>
 

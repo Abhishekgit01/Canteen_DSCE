@@ -1,11 +1,4 @@
-const PICKUP_TIME_CONFIG = {
-  leadMinutes: 15,
-  intervalMinutes: 15,
-  serviceStartHour: 9,
-  serviceEndHour: 20,
-  lunchRushStartHour: 12,
-  lunchRushEndHour: 15,
-} as const;
+import { getCollegePickupConfig } from '../constants/colleges';
 
 function formatTwoDigits(value: number) {
   return value.toString().padStart(2, '0');
@@ -47,12 +40,13 @@ export function pickupTimeToDate(value: string, base = new Date()) {
   return next;
 }
 
-export function getPickupWindow(now = new Date()) {
-  const serviceStart = setTimeForToday(now, PICKUP_TIME_CONFIG.serviceStartHour);
-  const serviceEnd = setTimeForToday(now, PICKUP_TIME_CONFIG.serviceEndHour);
+export function getPickupWindow(now = new Date(), college?: string | null) {
+  const config = getCollegePickupConfig(college);
+  const serviceStart = setTimeForToday(now, config.serviceStartHour);
+  const serviceEnd = setTimeForToday(now, config.serviceEndHour);
   const leadTimeDate = roundUpToInterval(
-    new Date(now.getTime() + PICKUP_TIME_CONFIG.leadMinutes * 60 * 1000),
-    PICKUP_TIME_CONFIG.intervalMinutes,
+    new Date(now.getTime() + config.leadMinutes * 60 * 1000),
+    config.intervalMinutes,
   );
 
   const minDate = leadTimeDate < serviceStart ? serviceStart : leadTimeDate;
@@ -60,12 +54,13 @@ export function getPickupWindow(now = new Date()) {
   return {
     minDate: minDate > serviceEnd ? serviceEnd : minDate,
     maxDate: serviceEnd,
+    intervalMinutes: config.intervalMinutes,
   };
 }
 
-export function clampPickupDate(date: Date, now = new Date()) {
-  const { minDate, maxDate } = getPickupWindow(now);
-  const rounded = roundUpToInterval(date, PICKUP_TIME_CONFIG.intervalMinutes);
+export function clampPickupDate(date: Date, now = new Date(), college?: string | null) {
+  const { minDate, maxDate, intervalMinutes } = getPickupWindow(now, college);
+  const rounded = roundUpToInterval(date, intervalMinutes);
 
   if (rounded < minDate) {
     return new Date(minDate);
@@ -78,29 +73,30 @@ export function clampPickupDate(date: Date, now = new Date()) {
   return rounded;
 }
 
-export function getPickupTimeSlots(now = new Date()) {
-  const { minDate, maxDate } = getPickupWindow(now);
+export function getPickupTimeSlots(now = new Date(), college?: string | null) {
+  const config = getCollegePickupConfig(college);
+  const { minDate, maxDate } = getPickupWindow(now, college);
   const cursor = new Date(minDate);
   const slots: string[] = [];
 
   while (cursor <= maxDate) {
     slots.push(dateToPickupTime(cursor));
-    cursor.setMinutes(cursor.getMinutes() + PICKUP_TIME_CONFIG.intervalMinutes);
+    cursor.setMinutes(cursor.getMinutes() + config.intervalMinutes);
   }
 
   if (slots.length === 0) {
-    slots.push(getTimeString(PICKUP_TIME_CONFIG.serviceEndHour));
+    slots.push(getTimeString(config.serviceEndHour));
   }
 
   return slots;
 }
 
-export function getDefaultPickupTime(now = new Date()) {
-  return dateToPickupTime(getPickupWindow(now).minDate);
+export function getDefaultPickupTime(now = new Date(), college?: string | null) {
+  return dateToPickupTime(getPickupWindow(now, college).minDate);
 }
 
-export function getPickupQuickChoices(now = new Date(), count = 4) {
-  return getPickupTimeSlots(now).slice(0, count);
+export function getPickupQuickChoices(now = new Date(), count = 4, college?: string | null) {
+  return getPickupTimeSlots(now, college).slice(0, count);
 }
 
 export function formatPickupTime(value: string) {
@@ -112,12 +108,13 @@ export function formatPickupTime(value: string) {
   });
 }
 
-export function getPickupSelectionHint(value: string, now = new Date()) {
+export function getPickupSelectionHint(value: string, now = new Date(), college?: string | null) {
+  const config = getCollegePickupConfig(college);
   const selectedDate = pickupTimeToDate(value, now);
   const minutesAway = Math.max(0, Math.ceil((selectedDate.getTime() - now.getTime()) / 60000));
-  const serviceClose = formatPickupTime(dateToPickupTime(getPickupWindow(now).maxDate));
+  const serviceClose = formatPickupTime(dateToPickupTime(getPickupWindow(now, college).maxDate));
 
-  if (minutesAway <= PICKUP_TIME_CONFIG.leadMinutes + PICKUP_TIME_CONFIG.intervalMinutes) {
+  if (minutesAway <= config.leadMinutes + config.intervalMinutes) {
     return `Earliest ready window today · Service closes at ${serviceClose}`;
   }
 
@@ -132,15 +129,17 @@ export function getPickupSelectionHint(value: string, now = new Date()) {
   return `About ${formattedLead} from now · Service closes at ${serviceClose}`;
 }
 
-export function getLunchRushWindowLabel() {
-  return `${formatPickupTime(getTimeString(PICKUP_TIME_CONFIG.lunchRushStartHour))} - ${formatPickupTime(
-    getTimeString(PICKUP_TIME_CONFIG.lunchRushEndHour),
+export function getLunchRushWindowLabel(college?: string | null) {
+  const config = getCollegePickupConfig(college);
+  return `${formatPickupTime(getTimeString(config.lunchRushStartHour))} - ${formatPickupTime(
+    getTimeString(config.lunchRushEndHour),
   )}`;
 }
 
-export function getLunchRushInfo(now = new Date()) {
-  const rushStart = setTimeForToday(now, PICKUP_TIME_CONFIG.lunchRushStartHour);
-  const rushEnd = setTimeForToday(now, PICKUP_TIME_CONFIG.lunchRushEndHour);
+export function getLunchRushInfo(now = new Date(), college?: string | null) {
+  const config = getCollegePickupConfig(college);
+  const rushStart = setTimeForToday(now, config.lunchRushStartHour);
+  const rushEnd = setTimeForToday(now, config.lunchRushEndHour);
 
   const formatDuration = (minutes: number) => {
     if (minutes < 60) return `${minutes}m`;
@@ -155,7 +154,7 @@ export function getLunchRushInfo(now = new Date()) {
       minutes: mins,
       formattedTime: formatDuration(mins),
       label: 'TO START',
-      subtitle: `Rush window ${getLunchRushWindowLabel()}`,
+      subtitle: `Rush window ${getLunchRushWindowLabel(college)}`,
     };
   }
 
@@ -165,19 +164,20 @@ export function getLunchRushInfo(now = new Date()) {
       minutes: mins,
       formattedTime: formatDuration(mins),
       label: 'LEFT',
-      subtitle: `Rush window ${getLunchRushWindowLabel()}`,
+      subtitle: `Rush window ${getLunchRushWindowLabel(college)}`,
     };
   }
 
-  const tomorrowStart = setTimeForToday(new Date(now.getTime() + 24 * 60 * 60 * 1000), PICKUP_TIME_CONFIG.lunchRushStartHour);
+  const tomorrowStart = setTimeForToday(
+    new Date(now.getTime() + 24 * 60 * 60 * 1000),
+    config.lunchRushStartHour,
+  );
   const mins = Math.max(1, Math.ceil((tomorrowStart.getTime() - now.getTime()) / 60000));
 
   return {
     minutes: mins,
     formattedTime: formatDuration(mins),
     label: 'TO START',
-    subtitle: `Next rush ${getLunchRushWindowLabel()}`,
+    subtitle: `Next rush ${getLunchRushWindowLabel(college)}`,
   };
 }
-
-export { PICKUP_TIME_CONFIG };

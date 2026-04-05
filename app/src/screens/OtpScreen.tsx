@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -10,6 +11,8 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { authApi } from '../api';
+import LoadingOverlay from '../components/LoadingOverlay';
+import { CAT_MESSAGES } from '../constants/loading';
 import { useAuthStore } from '../stores/authStore';
 import type { RootStackScreenProps } from '../types';
 import { palette, shadows } from '../theme';
@@ -23,6 +26,7 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const inputs = useRef<TextInput[]>([]);
+  const shake = useRef(new Animated.Value(0)).current;
 
   const { setAuth } = useAuthStore();
   const isPasswordReset = purpose === 'password_reset';
@@ -35,16 +39,62 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
     return () => clearInterval(interval);
   }, []);
 
-  const handleChange = (text: string, index: number) => {
-    if (text.length > 1) return;
+  const clearCodeInputs = () => {
+    setCode(['', '', '', '', '', '']);
+    inputs.current[0]?.focus();
+  };
 
-    const newCode = [...code];
-    newCode[index] = text;
-    setCode(newCode);
+  const triggerOtpFailure = (message: string) => {
+    setError(message);
+    clearCodeInputs();
+    Animated.sequence([
+      Animated.timing(shake, { toValue: 12, duration: 60, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: -12, duration: 60, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: 8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: -8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: 0, duration: 60, useNativeDriver: true }),
+    ]).start();
+  };
 
-    if (text && index < 5) {
-      inputs.current[index + 1]?.focus();
+  const maybeAutoSubmit = (digits: string[]) => {
+    if (isPasswordReset || loading) {
+      return;
     }
+
+    if (digits.join('').length === 6) {
+      setTimeout(() => {
+        void handleVerify(digits.join(''));
+      }, 0);
+    }
+  };
+
+  const handleChange = (text: string, index: number) => {
+    const digits = text.replace(/\D/g, '');
+    const nextCode = [...code];
+
+    if (!digits) {
+      nextCode[index] = '';
+      setCode(nextCode);
+      return;
+    }
+
+    digits
+      .slice(0, 6 - index)
+      .split('')
+      .forEach((digit, offset) => {
+        nextCode[index + offset] = digit;
+      });
+
+    setCode(nextCode);
+
+    const nextIndex = Math.min(index + digits.length, 5);
+    if (nextIndex < 5) {
+      inputs.current[nextIndex]?.focus();
+    } else {
+      inputs.current[5]?.blur();
+    }
+
+    maybeAutoSubmit(nextCode);
   };
 
   const handleKeyPress = (e: any, index: number) => {
@@ -53,8 +103,8 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
     }
   };
 
-  const handleVerify = async () => {
-    const fullCode = code.join('');
+  const handleVerify = async (overrideCode?: string) => {
+    const fullCode = overrideCode || code.join('');
 
     if (fullCode.length !== 6) {
       setError('Please enter all 6 digits');
@@ -94,10 +144,15 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
       await setAuth(user, token);
       navigation.replace('Main');
     } catch (err: any) {
-      setError(
+      const message =
         err.response?.data?.error ||
-          (isPasswordReset ? 'Could not reset your password' : 'Invalid OTP'),
-      );
+        (isPasswordReset ? 'Could not reset your password' : 'Invalid OTP');
+
+      if (err.response?.status === 400) {
+        triggerOtpFailure(message);
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -116,10 +171,13 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
       }
 
       setTimer(60);
+      clearCodeInputs();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to resend OTP');
     }
   };
+
+  const formattedTimer = `${Math.floor(timer / 60)}:${String(timer % 60).padStart(2, '0')}`;
 
   return (
     <KeyboardAvoidingView
@@ -136,7 +194,7 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
             : `Enter the 6-digit code sent to ${email} to finish setting up your account.`}
         </Text>
 
-        <View style={styles.codeContainer}>
+        <Animated.View style={[styles.codeContainer, { transform: [{ translateX: shake }] }]}>
           {code.map((digit, index) => (
             <TextInput
               key={index}
@@ -152,7 +210,7 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
               selectTextOnFocus
             />
           ))}
-        </View>
+        </Animated.View>
 
         {isPasswordReset ? (
           <View style={styles.passwordGroup}>
@@ -179,7 +237,7 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
 
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleVerify}
+          onPress={() => void handleVerify()}
           disabled={loading}
         >
           <Text style={styles.buttonText}>
@@ -195,7 +253,7 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
 
         <TouchableOpacity onPress={handleResend} disabled={timer > 0}>
           <Text style={[styles.resend, timer > 0 && styles.resendDisabled]}>
-            {timer > 0 ? `Resend in ${timer}s` : 'Resend OTP'}
+            {timer > 0 ? `Resend in ${formattedTimer}` : 'Resend OTP'}
           </Text>
         </TouchableOpacity>
 
@@ -214,6 +272,10 @@ export default function OtpScreen({ route, navigation }: RootStackScreenProps<'O
           </TouchableOpacity>
         ) : null}
       </View>
+      <LoadingOverlay
+        visible={loading}
+        message={isPasswordReset ? 'Resetting your password...' : CAT_MESSAGES.otp}
+      />
     </KeyboardAvoidingView>
   );
 }

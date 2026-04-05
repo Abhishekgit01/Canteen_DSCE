@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import { User, OTP } from '../models/index.js';
+import { normalizeCollege, SUPPORTED_COLLEGES, type SupportedCollege } from '../config/college.js';
 import { generateOTP } from '../utils/email.js';
 import { isEmailConfigured, sendOTPEmail } from '../services/email.service.js';
 import { lookupStudentByUsn, normalizeUsn } from '../services/student-registry.service.js';
@@ -12,11 +13,9 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET is not set in environment variables');
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const OTP_COOLDOWN_MS = 60 * 1000;
 type AuthVerificationMode = 'auto' | 'email' | 'none';
 type OtpPurpose = 'signup' | 'password_reset';
-type SupportedCollege = 'DSCE' | 'NIE';
-
-const supportedColleges: SupportedCollege[] = ['DSCE', 'NIE'];
 const INTERNAL_GOOGLE_ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 let googleClient: OAuth2Client | null = null;
 const GOOGLE_TOKEN_INFO_URL = 'https://oauth2.googleapis.com/tokeninfo';
@@ -38,22 +37,24 @@ const shouldUseOtpVerification = (): boolean => {
   return getAuthVerificationMode() !== 'none';
 };
 
-const normalizeCollege = (value: unknown): SupportedCollege | null => {
-  const normalized = String(value || '')
-    .trim()
-    .toUpperCase();
-
-  if (supportedColleges.includes(normalized as SupportedCollege)) {
-    return normalized as SupportedCollege;
-  }
-
-  return null;
-};
-
 const getOtpServiceErrorMessage = () =>
   isEmailConfigured()
     ? 'OTP delivery is taking too long. Please try again in a moment.'
     : 'OTP email service is not configured on the backend. Add RESEND_API_KEY to backend env.';
+
+const getOtpCooldownMessage = (otpSentAt?: Date | null) => {
+  if (!otpSentAt) {
+    return null;
+  }
+
+  const elapsed = Date.now() - new Date(otpSentAt).getTime();
+  if (elapsed >= OTP_COOLDOWN_MS) {
+    return null;
+  }
+
+  const secondsLeft = Math.ceil((OTP_COOLDOWN_MS - elapsed) / 1000);
+  return `Please wait ${secondsLeft} seconds before requesting another OTP`;
+};
 
 const getGoogleClientIds = (): string[] => {
   return String(process.env.GOOGLE_CLIENT_ID || '')
@@ -106,18 +107,71 @@ const createInternalGoogleUsn = async (googleId: string): Promise<string> => {
   throw new Error('Could not allocate an internal Google user ID');
 };
 
-const queueOtpEmail = (email: string, name: string, otp: string) => {
-  sendOTPEmail(email, name, otp).catch((error) => {
-    console.error(`Email send failed for ${email}:`, error instanceof Error ? error.message : error);
+const queueOtpEmail = (email: string, name: string, otp: string, college?: string | null) => {
+  sendOTPEmail(email, name, otp, college).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Email send failed for ${email}:`, message);
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.info(`[DEV OTP FALLBACK] OTP for ${email}: ${otp}`);
+    }
   });
 };
 
-const createAndQueueOtp = async (email: string, name: string, purpose: OtpPurpose) => {
+const supportsRosterLookup = (college: SupportedCollege) => college === 'DSCE' || college === 'NIE';
+
+const getRosterMissingNameMessage = (college: SupportedCollege) =>
+  `Enter your full name if your USN is missing from the ${college} roster`;
+
+const isDuplicateKeyError = (
+  error: unknown,
+): error is {
+  code: number;
+  keyPattern?: Record<string, number>;
+  keyValue?: Record<string, unknown>;
+} => {
+  return Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: number }).code === 11000);
+};
+
+const getSignupErrorMessage = (error: unknown) => {
+  if (isDuplicateKeyError(error)) {
+    const duplicateKey = Object.keys(error.keyPattern || {})[0];
+
+    if (duplicateKey === 'email') {
+      return 'That email address is already in use. Login instead or use Forgot password.';
+    }
+
+    if (duplicateKey === 'usn') {
+      return 'That USN is already linked to an account. Login instead or contact support if this looks wrong.';
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return 'Signup failed';
+};
+
+const createAndQueueOtp = async ({
+  user,
+  email,
+  name,
+  purpose,
+  college,
+}: {
+  user: { _id: unknown; college?: string | null };
+  email: string;
+  name: string;
+  purpose: OtpPurpose;
+  college?: string | null;
+}) => {
   if (!isEmailConfigured()) {
     throw new Error('OTP email service is not configured');
   }
 
   const otp = generateOTP();
+  const otpSentAt = new Date();
   await OTP.create({
     email,
     purpose,
@@ -125,7 +179,8 @@ const createAndQueueOtp = async (email: string, name: string, purpose: OtpPurpos
     expiresAt: new Date(Date.now() + 10 * 60 * 1000),
   });
 
-  queueOtpEmail(email, name, otp);
+  await User.updateOne({ _id: user._id }, { $set: { otpSentAt } });
+  queueOtpEmail(email, name, otp, college || user.college);
 };
 
 const createAuthResponse = (user: {
@@ -289,7 +344,9 @@ router.post('/signup', async (req: Request, res: Response) => {
     const college = normalizeCollege(requestedCollege);
     const verificationMode = getAuthVerificationMode();
     const providedName = String(name || '').trim();
-    const student = college === 'DSCE' ? lookupStudentByUsn(String(usn || '')) : null;
+    const student = college && supportsRosterLookup(college)
+      ? lookupStudentByUsn(String(usn || ''), college)
+      : null;
     const resolvedUsn = student?.usn ?? normalizeUsn(String(usn || ''));
     const resolvedName = student?.name || providedName;
 
@@ -305,11 +362,15 @@ router.post('/signup', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Please enter a valid email address' });
     }
 
+    if (String(password || '').length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
     if (!resolvedName) {
       return res.status(400).json({
         error:
-          college === 'DSCE'
-            ? 'Enter your full name if your USN is missing from the DSCE roster'
+          supportsRosterLookup(college)
+            ? getRosterMissingNameMessage(college)
             : 'Please enter your full name',
       });
     }
@@ -369,10 +430,21 @@ router.post('/signup', async (req: Request, res: Response) => {
       });
     }
 
+    const otpCooldownMessage = getOtpCooldownMessage(user.otpSentAt);
+    if (otpCooldownMessage) {
+      return res.status(429).json({ error: otpCooldownMessage });
+    }
+
     await OTP.deleteMany({ email: normalizedEmail, purpose: 'signup' });
 
     try {
-      await createAndQueueOtp(normalizedEmail, resolvedName, 'signup');
+      await createAndQueueOtp({
+        user,
+        email: normalizedEmail,
+        name: resolvedName,
+        purpose: 'signup',
+        college,
+      });
     } catch (error) {
       console.error('OTP delivery error:', error);
 
@@ -391,15 +463,21 @@ router.post('/signup', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Signup error:', error);
-    res.status(500).json({ error: 'Signup failed' });
+    res.status(500).json({ error: getSignupErrorMessage(error) });
   }
 });
 
 router.get('/student/:usn', async (req: Request, res: Response) => {
-  const student = lookupStudentByUsn(req.params.usn);
+  const college = normalizeCollege(req.query.college);
+
+  if (!college || !SUPPORTED_COLLEGES.includes(college)) {
+    return res.status(400).json({ error: 'Please choose a supported college' });
+  }
+
+  const student = lookupStudentByUsn(req.params.usn, college);
 
   if (!student) {
-    return res.status(404).json({ error: 'USN not found in the DSCE first-year roster' });
+    return res.status(404).json({ error: `USN not found in the ${college} roster` });
   }
 
   return res.json(student);
@@ -424,7 +502,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
 
     const user = await User.findOneAndUpdate(
       { email: normalizedEmail },
-      { isVerified: true },
+      { isVerified: true, $unset: { otpSentAt: 1 } },
       { new: true }
     );
 
@@ -451,14 +529,25 @@ router.post('/resend-otp', async (req: Request, res: Response) => {
     }
 
     const normalizedEmail = String(req.body.email || '').trim().toLowerCase();
-    const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash');
+    const user = await User.findOne({ email: normalizedEmail }).select('name email isVerified college otpSentAt');
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.isVerified) return res.status(400).json({ error: 'User already verified' });
+
+    const otpCooldownMessage = getOtpCooldownMessage(user.otpSentAt);
+    if (otpCooldownMessage) {
+      return res.status(429).json({ error: otpCooldownMessage });
+    }
 
     await OTP.deleteMany({ email: normalizedEmail, purpose: 'signup' });
 
     try {
-      await createAndQueueOtp(normalizedEmail, user.name, 'signup');
+      await createAndQueueOtp({
+        user,
+        email: normalizedEmail,
+        name: user.name,
+        purpose: 'signup',
+        college: user.college,
+      });
     } catch (error) {
       console.error('OTP resend error:', error);
       return res.status(503).json({
@@ -487,7 +576,9 @@ router.post('/forgot-password/request', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Please enter a valid email address' });
     }
 
-    const user = await User.findOne({ email: normalizedEmail }).select('_id isVerified name');
+    const user = await User.findOne({ email: normalizedEmail }).select(
+      '_id isVerified name college otpSentAt',
+    );
     if (!user) {
       return res.status(404).json({ error: 'No account found with that email address' });
     }
@@ -496,10 +587,21 @@ router.post('/forgot-password/request', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Verify your account first before resetting the password' });
     }
 
+    const otpCooldownMessage = getOtpCooldownMessage(user.otpSentAt);
+    if (otpCooldownMessage) {
+      return res.status(429).json({ error: otpCooldownMessage });
+    }
+
     await OTP.deleteMany({ email: normalizedEmail, purpose: 'password_reset' });
 
     try {
-      await createAndQueueOtp(normalizedEmail, user.name, 'password_reset');
+      await createAndQueueOtp({
+        user,
+        email: normalizedEmail,
+        name: user.name,
+        purpose: 'password_reset',
+        college: user.college,
+      });
     } catch (error) {
       console.error('Password reset OTP error:', error);
       return res.status(503).json({ error: getOtpServiceErrorMessage() });
@@ -549,6 +651,7 @@ router.post('/forgot-password/reset', async (req: Request, res: Response) => {
     }
 
     user.passwordHash = await bcrypt.hash(password, 12);
+    user.otpSentAt = undefined;
     await user.save();
 
     await OTP.deleteMany({ email: normalizedEmail, purpose: 'password_reset' });

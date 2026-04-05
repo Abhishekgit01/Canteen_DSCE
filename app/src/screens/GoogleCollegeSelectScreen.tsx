@@ -12,9 +12,35 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { authApi } from '../api';
+import LoadingOverlay from '../components/LoadingOverlay';
+import { AVAILABLE_COLLEGES, COLLEGES, DEFAULT_COLLEGE } from '../constants/colleges';
+import { CAT_MESSAGES } from '../constants/loading';
 import { useAuthStore } from '../stores/authStore';
 import type { College, RootStackScreenProps } from '../types';
 import { palette, shadows } from '../theme';
+
+const collegeCards: Record<
+  College,
+  {
+    subtitle: string;
+    icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+    tint: string;
+    soft: string;
+  }
+> = {
+  DSCE: {
+    subtitle: 'Roster-aware onboarding and the full campus canteen flow',
+    icon: 'school-outline',
+    tint: palette.brand,
+    soft: '#FCE7E1',
+  },
+  NIE: {
+    subtitle: 'Roster-aware onboarding with NIE-specific menus and timings',
+    icon: 'office-building-outline',
+    tint: palette.info,
+    soft: palette.infoSoft,
+  },
+};
 
 const colleges: Array<{
   id: College;
@@ -23,31 +49,20 @@ const colleges: Array<{
   icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   tint: string;
   soft: string;
-}> = [
-  {
-    id: 'DSCE',
-    title: 'DSCE',
-    subtitle: 'Roster-aware onboarding and the full campus canteen flow',
-    icon: 'school-outline',
-    tint: palette.brand,
-    soft: '#FCE7E1',
-  },
-  {
-    id: 'NIE',
-    title: 'NIE',
-    subtitle: 'Manual-first onboarding with the same ordering experience',
-    icon: 'office-building-outline',
-    tint: palette.info,
-    soft: palette.infoSoft,
-  },
-];
+}> = AVAILABLE_COLLEGES.map((id) => ({
+  id,
+  title: COLLEGES[id].name,
+  ...collegeCards[id],
+}));
 
 export default function GoogleCollegeSelectScreen({
   navigation,
   route,
 }: RootStackScreenProps<'GoogleCollegeSelect'>) {
   const { accessToken, email, idToken, name, picture } = route.params;
-  const [selectedCollege, setSelectedCollege] = useState<College>(route.params.selectedCollege ?? 'DSCE');
+  const [selectedCollege, setSelectedCollege] = useState<College>(
+    route.params.selectedCollege ?? DEFAULT_COLLEGE,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { setAuth } = useAuthStore();
@@ -141,6 +156,7 @@ export default function GoogleCollegeSelectScreen({
           </Text>
         </TouchableOpacity>
       </View>
+      <LoadingOverlay visible={loading} message={CAT_MESSAGES.signup} />
     </KeyboardAvoidingView>
   );
 }

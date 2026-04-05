@@ -1,14 +1,14 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { DEFAULT_COLLEGE, SUPPORTED_COLLEGES } from '../config/college.js';
 
-const supportedCollegeValues = ['DSCE', 'NIE', 'DSATM'] as const;
+const supportedCollegeValues = SUPPORTED_COLLEGES;
 
 // User Schema
 const userSchema = new mongoose.Schema({
   usn: {
     type: String,
     required: true,
-    unique: true,
     uppercase: true,
     trim: true,
     match: /^[1-9][A-Z]{2}\d{2}[A-Z]{2}\d{3}$/,
@@ -45,6 +45,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: supportedCollegeValues,
     trim: true,
+    default: DEFAULT_COLLEGE,
   },
   role: {
     type: String,
@@ -59,6 +60,7 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  otpSentAt: Date,
   lockUntil: Date,
   createdAt: {
     type: Date,
@@ -77,6 +79,9 @@ userSchema.methods.incrementLoginAttempts = async function() {
   }
   await this.save();
 };
+
+userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ usn: 1, college: 1 }, { unique: true });
 
 export const User = mongoose.model('User', userSchema);
 
@@ -191,7 +196,15 @@ const menuItemSchema = new mongoose.Schema({
     type: Number,
     default: 10,
   },
+  college: {
+    type: String,
+    enum: supportedCollegeValues,
+    trim: true,
+    default: DEFAULT_COLLEGE,
+  },
 });
+
+menuItemSchema.index({ college: 1, isAvailable: 1, category: 1, name: 1 });
 
 export const MenuItem = mongoose.model('MenuItem', menuItemSchema);
 
@@ -291,11 +304,18 @@ const orderSchema = new mongoose.Schema({
     type: String,
     enum: supportedCollegeValues,
     trim: true,
+    default: DEFAULT_COLLEGE,
   },
   createdAt: {
     type: Date,
     default: Date.now,
   },
 });
+
+orderSchema.index({ userId: 1, createdAt: -1 });
+orderSchema.index({ status: 1, createdAt: -1 });
+orderSchema.index({ college: 1, createdAt: -1 });
+orderSchema.index({ razorpayOrderId: 1 }, { sparse: true });
+orderSchema.index({ qrTokenHash: 1 }, { sparse: true });
 
 export const Order = mongoose.model('Order', orderSchema);

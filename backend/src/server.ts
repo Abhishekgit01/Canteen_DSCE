@@ -6,16 +6,66 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import app from './app.js';
+import { MENU_CACHE_SELECT, setMenuCache } from './cache/menuCache.js';
+import { DEFAULT_COLLEGE } from './config/college.js';
 import { User, MenuItem, Order } from './models/index.js';
 
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/dsce-canteen';
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not set in environment variables');
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || [
   'http://localhost:5173',
   'http://localhost:19006',
   'exp://',
 ];
+
+const baseMenuSeed = [
+  {
+    name: 'Masala Dosa',
+    description: 'Crispy rice crepe filled with spiced potato filling, served with coconut chutney and sambar',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Masala+Dosa',
+    price: 55,
+    calories: 350,
+    category: 'meals',
+    tempOptions: ['normal', 'hot'],
+    isAvailable: true,
+    preparationMinutes: 12,
+  },
+  {
+    name: 'Idli Sambar (3pc)',
+    description: 'Steamed rice cakes served with lentil soup and coconut chutney',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Idli+Sambar',
+    price: 40,
+    calories: 280,
+    category: 'meals',
+    tempOptions: ['normal', 'hot'],
+    isAvailable: true,
+    preparationMinutes: 8,
+  },
+  {
+    name: 'Veg Fried Rice',
+    description: 'Wok-tossed rice with fresh vegetables and Indo-Chinese spices',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Veg+Fried+Rice',
+    price: 70,
+    calories: 450,
+    category: 'meals',
+    tempOptions: ['normal', 'hot'],
+    isAvailable: true,
+    preparationMinutes: 15,
+  },
+  {
+    name: 'Filter Coffee',
+    description: 'Traditional South Indian filter coffee brewed fresh',
+    imageUrl: 'https://dummyimage.com/400x300/1e2640/f97316.png&text=Filter+Coffee',
+    price: 20,
+    calories: 80,
+    category: 'beverages',
+    tempOptions: ['hot'],
+    isAvailable: true,
+    preparationMinutes: 3,
+  },
+] as const;
 
 // Create HTTP server
 const httpServer = createServer(app);
@@ -110,7 +160,7 @@ app.post('/internal/emit', express.json(), (req, res) => {
 // Root route for API status and Razorpay verification
 app.get('/', (_req, res) => {
   res.json({ 
-    name: 'DSCE Canteen API',
+    name: 'Campus Canteen API',
     status: 'online',
     version: '1.0.0',
     endpoints: {
@@ -122,22 +172,86 @@ app.get('/', (_req, res) => {
 });
 
 // Connect to MongoDB and start server
-mongoose.connect(MONGO_URI)
+mongoose
+  .connect(MONGO_URI, {
+    maxPoolSize: 10,
+    minPoolSize: 2,
+    socketTimeoutMS: 30000,
+    serverSelectionTimeoutMS: 5000,
+    heartbeatFrequencyMS: 10000,
+    retryWrites: true,
+  })
   .then(async () => {
     console.log('📦 Connected to MongoDB');
-    
-    // Auto-seed if no users exist
-    const userCount = await User.countDocuments();
-    if (userCount === 0) {
-      console.log('🌱 Seeding database...');
-      const salt = await bcrypt.genSalt(12);
-      await User.create([
-        { name: 'Admin User', email: 'admin@dsce.edu.in', passwordHash: await bcrypt.hash('Admin@123!', salt), usn: '1DS21CS001', role: 'admin', isVerified: true },
-        { name: 'Manager User', email: 'manager@dsce.edu.in', passwordHash: await bcrypt.hash('Manager@123!', salt), usn: '1DS21CS002', role: 'manager', isVerified: true },
-        { name: 'Staff User', email: 'staff@dsce.edu.in', passwordHash: await bcrypt.hash('Staff@123!', salt), usn: '1DS21CS003', role: 'staff', isVerified: true },
-        { name: 'Test Student', email: 'test@dsce.edu.in', passwordHash: await bcrypt.hash('Test@123!', salt), usn: '1DS21CS004', role: 'student', isVerified: true }
-      ]);
-      console.log('✅ Users seeded');
+
+    await User.updateMany(
+      { $or: [{ college: { $exists: false } }, { college: null }, { college: '' }] },
+      { $set: { college: DEFAULT_COLLEGE } },
+    );
+    await MenuItem.updateMany(
+      { $or: [{ college: { $exists: false } }, { college: null }, { college: '' }] },
+      { $set: { college: DEFAULT_COLLEGE } },
+    );
+
+    const salt = await bcrypt.genSalt(12);
+    const seedUsers = [
+      { name: 'Admin User', email: 'admin@dsce.edu.in', password: 'Admin@123!', usn: '1DS21CS001', role: 'admin', college: 'DSCE' },
+      { name: 'DSCE Manager', email: 'manager@dsce.edu.in', password: 'Manager@123!', usn: '1DS21CS002', role: 'manager', college: 'DSCE' },
+      { name: 'DSCE Staff', email: 'staff@dsce.edu.in', password: 'Staff@123!', usn: '1DS21CS003', role: 'staff', college: 'DSCE' },
+      { name: 'DSCE Student', email: 'test@dsce.edu.in', password: 'Test@123!', usn: '1DS21CS004', role: 'student', college: 'DSCE' },
+      { name: 'NIE Manager', email: 'manager@nie.edu.in', password: 'Manager@123!', usn: '4IK25CS900', role: 'manager', college: 'NIE' },
+      { name: 'NIE Staff', email: 'staff@nie.edu.in', password: 'Staff@123!', usn: '4IK25CS901', role: 'staff', college: 'NIE' },
+      { name: 'NIE Student', email: 'test@nie.edu.in', password: 'Test@123!', usn: '4IK25CS902', role: 'student', college: 'NIE' },
+    ] as const;
+
+    for (const seedUser of seedUsers) {
+      await User.updateOne(
+        { email: seedUser.email },
+        {
+          $setOnInsert: {
+            name: seedUser.name,
+            email: seedUser.email,
+            passwordHash: await bcrypt.hash(seedUser.password, salt),
+            usn: seedUser.usn,
+            role: seedUser.role,
+            college: seedUser.college,
+            isVerified: true,
+          },
+        },
+        { upsert: true },
+      );
+    }
+
+    const dsceMenuCount = await MenuItem.countDocuments({ college: 'DSCE' });
+    const nieMenuCount = await MenuItem.countDocuments({ college: 'NIE' });
+
+    if (dsceMenuCount === 0) {
+      await MenuItem.insertMany(baseMenuSeed.map((item) => ({ ...item, college: 'DSCE' })));
+      console.log(`🍽️ Seeded ${baseMenuSeed.length} DSCE menu items`);
+    }
+
+    if (nieMenuCount === 0) {
+      const dsceItems = await MenuItem.find({ college: 'DSCE' }).select(MENU_CACHE_SELECT).lean();
+      const sourceItems = dsceItems.length > 0 ? dsceItems : baseMenuSeed;
+      await MenuItem.insertMany(sourceItems.map((item: any) => ({ ...item, college: 'NIE' })));
+      console.log(`🍽️ Seeded ${sourceItems.length} NIE menu items`);
+    }
+
+    try {
+      for (const college of ['DSCE', 'NIE'] as const) {
+        const items = await MenuItem.find({ college, isAvailable: true })
+          .select(MENU_CACHE_SELECT)
+          .sort({ category: 1, name: 1 })
+          .lean();
+
+        setMenuCache(college, items);
+        console.log(`🍽️ Menu preloaded for ${college}: ${items.length} items cached`);
+      }
+    } catch (error) {
+      console.warn(
+        'Menu preload failed (non-critical):',
+        error instanceof Error ? error.message : error,
+      );
     }
 
     // Zombie order cleanup — mark abandoned pending_payment orders as failed

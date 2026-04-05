@@ -12,7 +12,17 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { API_CONFIG_ERROR, authApi } from '../api';
+import { API_CONFIG_ERROR, authApi, menuApi } from '../api';
+import LoadingOverlay from '../components/LoadingOverlay';
+import {
+  AVAILABLE_COLLEGES,
+  DEFAULT_COLLEGE,
+  getCanteenName,
+  getCollegeFullName,
+  getCollegeName,
+  supportsRosterLookup,
+} from '../constants/colleges';
+import { CAT_MESSAGES } from '../constants/loading';
 import { getGoogleSignInErrorMessage, signInWithGoogleNative } from '../lib/googleAuth';
 import type { College, RootStackScreenProps } from '../types';
 import { useAuthStore } from '../stores/authStore';
@@ -100,7 +110,9 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
   const [isLogin, setIsLogin] = useState(route.params?.initialMode !== 'signup');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [selectedCollege, setSelectedCollege] = useState<College>(route.params?.selectedCollege ?? 'DSCE');
+  const [selectedCollege, setSelectedCollege] = useState<College>(
+    route.params?.selectedCollege ?? DEFAULT_COLLEGE,
+  );
 
   const [loginEmail, setLoginEmail] = useState(route.params?.prefilledEmail ?? '');
   const [loginPassword, setLoginPassword] = useState('');
@@ -112,10 +124,14 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
   const [manualName, setManualName] = useState('');
   const [isLookingUpUsn, setIsLookingUpUsn] = useState(false);
   const [usnLookupError, setUsnLookupError] = useState('');
+  const [hasConsent, setHasConsent] = useState(false);
 
   const { setAuth } = useAuthStore();
   const normalizedSignupUsn = useMemo(() => usn.trim().toUpperCase().replace(/\s+/g, ''), [usn]);
   const isGoogleConfigured = Platform.OS === 'android';
+  const selectedCollegeName = getCollegeName(selectedCollege);
+  const selectedCollegeFullName = getCollegeFullName(selectedCollege);
+  const selectedCanteenName = getCanteenName(selectedCollege);
 
   useEffect(() => {
     if (route.params?.selectedCollege) {
@@ -140,7 +156,7 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
     setStudentName('');
     setUsnLookupError('');
 
-    if (selectedCollege !== 'DSCE') {
+    if (!supportsRosterLookup(selectedCollege)) {
       setIsLookingUpUsn(false);
       return;
     }
@@ -154,7 +170,7 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
     setIsLookingUpUsn(true);
 
     authApi
-      .lookupStudent(normalizedSignupUsn)
+      .lookupStudent(normalizedSignupUsn, selectedCollege)
       .then((response) => {
         if (!cancelled) {
           setStudentName(response.data.name);
@@ -164,7 +180,7 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
         if (!cancelled) {
           const lookupError =
             err.response?.status === 404
-              ? err.response?.data?.error || 'USN not found in the DSCE roster'
+              ? err.response?.data?.error || `USN not found in the ${selectedCollegeName} roster`
               : 'Could not reach the server. Check that the backend is running and reachable.';
           setUsnLookupError(lookupError);
         }
@@ -190,11 +206,17 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
 
     setLoading(true);
     setError('');
+    const menuPromise = menuApi.prefetchMenu(selectedCollege).catch(() => null);
 
     try {
       const response = await authApi.login({ email: normalizedEmail, password: loginPassword });
       const { user, token } = response.data;
       await setAuth(user, token);
+      if (user.college && user.college !== selectedCollege) {
+        await menuApi.prefetchMenu(user.college).catch(() => null);
+      } else {
+        await menuPromise;
+      }
       navigation.replace('Main');
     } catch (err: any) {
       setError(err.response?.data?.error || err.userMessage || API_CONFIG_ERROR || 'Login failed');
@@ -219,10 +241,15 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
 
     if (!resolvedName) {
       setError(
-        selectedCollege === 'DSCE'
-          ? usnLookupError || 'Enter your full name if your USN is not in the DSCE roster'
+        supportsRosterLookup(selectedCollege)
+          ? usnLookupError || `Enter your full name if your USN is not in the ${selectedCollegeName} roster`
           : 'Please enter your full name',
       );
+      return;
+    }
+
+    if (!hasConsent) {
+      setError('Please confirm the privacy notice before signing up');
       return;
     }
 
@@ -272,11 +299,34 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
             <MaterialCommunityIcons name="arrow-left" size={20} color={palette.ink} />
           </TouchableOpacity>
 
-          <Text style={styles.heroEyebrow}>{selectedCollege} Access</Text>
+          <Text style={styles.heroEyebrow}>{selectedCollegeName} Access</Text>
           <Text style={styles.heroTitle}>Welcome to the canteen lane.</Text>
           <Text style={styles.heroSubtitle}>
-            Sign in for live orders or create a fresh account with campus-aware signup, OTP verification, and one-tap Google access.
+            Sign in for live orders or create a fresh account with campus-aware signup, OTP verification, and one-tap Google access for {selectedCanteenName}.
           </Text>
+        </View>
+
+        <View style={styles.collegeSwitchCard}>
+          <Text style={styles.collegeSwitchLabel}>College</Text>
+          <View style={styles.collegeSwitchRow}>
+            {AVAILABLE_COLLEGES.map((college) => {
+              const active = college === selectedCollege;
+
+              return (
+                <TouchableOpacity
+                  key={college}
+                  activeOpacity={0.9}
+                  style={[styles.collegeChip, active && styles.collegeChipActive]}
+                  onPress={() => setSelectedCollege(college)}
+                >
+                  <Text style={[styles.collegeChipText, active && styles.collegeChipTextActive]}>
+                    {getCollegeName(college)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.collegeSwitchHint}>{selectedCollegeFullName}</Text>
         </View>
 
         <View style={styles.tabContainer}>
@@ -335,6 +385,14 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
               <Text style={styles.buttonText}>{loading ? 'Please wait...' : 'Login'}</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={styles.policyLinkWrap}
+              onPress={() => navigation.navigate('PrivacyPolicy')}
+            >
+              <Text style={styles.policyLink}>Privacy Policy</Text>
+            </TouchableOpacity>
+
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>OR</Text>
@@ -352,7 +410,7 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
           </View>
         ) : (
           <View style={styles.formCard}>
-            <Text style={styles.formTitle}>Create your {selectedCollege} account</Text>
+            <Text style={styles.formTitle}>Create your {selectedCollegeName} account</Text>
             <TextInput
               style={styles.input}
               placeholder="USN"
@@ -364,21 +422,23 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
 
             <View style={styles.lookupCard}>
               <Text style={styles.lookupLabel}>
-                {selectedCollege === 'DSCE' ? 'DSCE records' : 'Manual verification'}
+                {supportsRosterLookup(selectedCollege)
+                  ? `${selectedCollegeName} records`
+                  : 'Manual verification'}
               </Text>
               <Text style={styles.lookupValue}>
-                {selectedCollege === 'DSCE'
+                {supportsRosterLookup(selectedCollege)
                   ? isLookingUpUsn
                     ? 'Looking up your name...'
                     : studentName || 'If your USN is not found, type your name below.'
-                  : 'NIE signup currently uses manual name entry, then OTP verification on email.'}
+                  : `${selectedCollegeName} signup currently uses manual name entry, then OTP verification on email.`}
               </Text>
-              {usnLookupError && selectedCollege === 'DSCE' ? (
+              {usnLookupError && supportsRosterLookup(selectedCollege) ? (
                 <Text style={styles.lookupError}>{usnLookupError}</Text>
               ) : null}
             </View>
 
-            {selectedCollege !== 'DSCE' || !studentName || !isLookingUpUsn ? (
+            {!supportsRosterLookup(selectedCollege) || !studentName || !isLookingUpUsn ? (
               <TextInput
                 style={styles.input}
                 placeholder="Full Name"
@@ -406,6 +466,28 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
               secureTextEntry
             />
             <TouchableOpacity
+              activeOpacity={0.9}
+              style={styles.consentRow}
+              onPress={() => setHasConsent((current) => !current)}
+            >
+              <MaterialCommunityIcons
+                name={hasConsent ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                size={22}
+                color={hasConsent ? palette.accent : palette.subtle}
+              />
+              <View style={styles.consentCopy}>
+                <Text style={styles.consentText}>
+                  I confirm I can use this campus canteen app and I agree to the privacy notice.
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate('PrivacyPolicy')}
+                >
+                  <Text style={styles.inlinePolicyLink}>Read Privacy Policy</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[styles.button, loading && styles.buttonDisabled]}
               onPress={handleSignup}
               disabled={loading}
@@ -431,6 +513,10 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
           </View>
         )}
       </ScrollView>
+      <LoadingOverlay
+        visible={loading}
+        message={isLogin ? CAT_MESSAGES.login : CAT_MESSAGES.signup}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -487,6 +573,47 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 4,
     ...shadows.card,
+  },
+  collegeSwitchCard: {
+    backgroundColor: palette.surface,
+    borderRadius: 24,
+    padding: 16,
+    gap: 10,
+    ...shadows.card,
+  },
+  collegeSwitchLabel: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  collegeSwitchRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  collegeChip: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  collegeChipActive: {
+    backgroundColor: palette.brand,
+  },
+  collegeChipText: {
+    color: palette.ink,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  collegeChipTextActive: {
+    color: palette.surface,
+  },
+  collegeSwitchHint: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   tab: {
     flex: 1,
@@ -552,6 +679,34 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
   inlineLink: {
+    color: palette.brand,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  policyLinkWrap: {
+    alignItems: 'center',
+    marginTop: -2,
+  },
+  policyLink: {
+    color: palette.brand,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  consentCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  consentText: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  inlinePolicyLink: {
     color: palette.brand,
     fontSize: 13,
     fontWeight: '800',

@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native';
 import Animated, { 
   useSharedValue, 
@@ -16,6 +15,7 @@ import Animated, {
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { orderApi } from '../api';
 import AppIcon from '../components/AppIcon';
+import CatLoader from '../components/CatLoader';
 import { RootStackNavigationProp, RootStackRouteProp } from '../types';
 
 export default function OrderSuccessScreen() {
@@ -69,7 +69,9 @@ export default function OrderSuccessScreen() {
       </Animated.View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#f97316" style={{ marginTop: 20 }} />
+        <View style={styles.loaderWrap}>
+          <CatLoader message="Pulling together your order details..." />
+        </View>
       ) : order ? (
         <Animated.View style={[styles.detailsCard, animatedItems]}>
           <Text style={styles.detailsTitle}>Items Ordered</Text>
@@ -139,6 +141,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
     marginTop: 8,
+  },
+  loaderWrap: {
+    marginTop: 20,
   },
   detailsTitle: {
     color: '#f97316',

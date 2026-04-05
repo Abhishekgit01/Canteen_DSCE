@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -13,6 +12,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { orderApi } from '../api';
 import AppIcon from '../components/AppIcon';
+import CatLoader from '../components/CatLoader';
 import { MainTabNavigationProp, Order } from '../types';
 import { palette, shadows } from '../theme';
 
@@ -114,7 +114,7 @@ export default function OrdersScreen() {
         ListEmptyComponent={
           loading ? (
             <View style={styles.emptyState}>
-              <ActivityIndicator size="large" color={palette.accent} />
+              <CatLoader message="Fetching your orders..." />
             </View>
           ) : (
             <View style={styles.emptyState}>
@@ -167,7 +167,7 @@ export default function OrdersScreen() {
 
                 {openingOrderId === item.id ? (
                   <View style={styles.loadingRow}>
-                    <ActivityIndicator size="small" color={palette.accent} />
+                    <CatLoader size="small" />
                     <Text style={styles.actionText}>Opening QR...</Text>
                   </View>
                 ) : interactive ? (

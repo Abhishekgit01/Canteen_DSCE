@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   Animated,
   Easing,
   Linking,
@@ -19,6 +18,8 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import RazorpayCheckout from 'react-native-razorpay';
 import { orderApi, paymentApi } from '../api';
 import { connectSocket } from '../api/socket';
+import CatLoader from '../components/CatLoader';
+import { formatPayeeName, getCanteenName } from '../constants/colleges';
 import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import {
@@ -92,8 +93,9 @@ export default function PaymentScreen() {
   const shortOrderId = orderId.slice(-6).toUpperCase();
   const upiPayment = mode === 'upi_link' ? (payment as UpiLinkPaymentInitResponse) : null;
   const razorpayPayment = mode === 'razorpay' ? (payment as RazorpayPaymentInitResponse) : null;
-  const merchantName = upiPayment?.canteenName || 'DSCE Canteen';
+  const merchantName = formatPayeeName(upiPayment?.canteenName, user?.college);
   const merchantUpiId = upiPayment?.canteenUpiId || 'canteen@upi';
+  const fallbackMerchantName = getCanteenName(user?.college);
   const selectedUpiAppLabel =
     upiAppOptions.find((option) => option.key === selectedUpiApp)?.label || 'Google Pay';
 
@@ -306,7 +308,7 @@ export default function PaymentScreen() {
         amount: razorpayPayment.razorpay.amount,
         currency: razorpayPayment.razorpay.currency,
         order_id: razorpayPayment.razorpay.razorpay_order_id,
-        name: 'DSCE Canteen',
+        name: fallbackMerchantName,
         description: 'Food Order',
         prefill: {
           contact: phoneNumber,
@@ -388,7 +390,7 @@ export default function PaymentScreen() {
 
     return (
       <View style={styles.statusContainer}>
-        <ActivityIndicator size="small" color="#f97316" />
+        <CatLoader size="small" />
         <Text style={styles.statusText}>{statusMessage || 'Processing...'}</Text>
       </View>
     );
@@ -552,7 +554,7 @@ export default function PaymentScreen() {
                 <View style={styles.stepIcon}>
                   <Text style={styles.stepIconText}>2</Text>
                 </View>
-                <Text style={styles.stepText}>Pay ₹{formatAmount(amount)} to DSCE Canteen</Text>
+                <Text style={styles.stepText}>Pay ₹{formatAmount(amount)} to {merchantName}</Text>
               </View>
               <View style={styles.stepRow}>
                 <View style={styles.stepIcon}>

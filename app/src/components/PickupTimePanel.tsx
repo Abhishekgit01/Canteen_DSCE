@@ -19,6 +19,7 @@ type PickupTimePanelProps = {
   onChange: (time: string) => void | Promise<void>;
   contextLabel: string;
   compact?: boolean;
+  college?: string | null;
 };
 
 export default function PickupTimePanel({
@@ -26,11 +27,12 @@ export default function PickupTimePanel({
   onChange,
   contextLabel,
   compact = false,
+  college,
 }: PickupTimePanelProps) {
   const [showPicker, setShowPicker] = useState(false);
   const now = useMemo(() => new Date(), []);
-  const quickChoices = useMemo(() => getPickupQuickChoices(now), [now]);
-  const { minDate, maxDate } = useMemo(() => getPickupWindow(now), [now]);
+  const quickChoices = useMemo(() => getPickupQuickChoices(now, 4, college), [college, now]);
+  const { minDate, maxDate } = useMemo(() => getPickupWindow(now, college), [college, now]);
   const pickerDate = useMemo(() => pickupTimeToDate(value, now), [now, value]);
 
   const applyTime = (nextTime: string) => {
@@ -48,7 +50,7 @@ export default function PickupTimePanel({
       return;
     }
 
-    const safeDate = clampPickupDate(selectedDate, now);
+    const safeDate = clampPickupDate(selectedDate, now, college);
     applyTime(dateToPickupTime(safeDate));
   };
 
@@ -72,7 +74,7 @@ export default function PickupTimePanel({
           <Text style={[styles.highlightValue, compact && styles.highlightValueCompact]}>
             {formatPickupTime(value)}
           </Text>
-          <Text style={styles.highlightHint}>{getPickupSelectionHint(value, now)}</Text>
+          <Text style={styles.highlightHint}>{getPickupSelectionHint(value, now, college)}</Text>
         </View>
 
         <TouchableOpacity
@@ -107,7 +109,7 @@ export default function PickupTimePanel({
       </View>
 
       <View style={styles.footerRow}>
-        <Text style={styles.rushHint}>Lunch rush: {getLunchRushWindowLabel()}</Text>
+        <Text style={styles.rushHint}>Lunch rush: {getLunchRushWindowLabel(college)}</Text>
         <Text style={styles.boundsHint}>
           Open till {formatPickupTime(dateToPickupTime(maxDate))}
         </Text>

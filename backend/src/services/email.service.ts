@@ -1,91 +1,67 @@
 import { Resend } from 'resend';
-import nodemailer from 'nodemailer';
+import { COLLEGE_CANTEEN_NAMES, resolveCollege } from '../config/college.js';
 
 const getResendApiKey = () => String(process.env.RESEND_API_KEY || '').trim();
-const getEmailUser = () => String(process.env.EMAIL_USER || '').trim();
-const getEmailPass = () => String(process.env.EMAIL_PASS || '').trim();
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const getCanteenName = (college?: string | null) => {
+  return COLLEGE_CANTEEN_NAMES[resolveCollege(college)];
+};
 
 const getResendClient = (): Resend => {
   const apiKey = getResendApiKey();
 
   if (!apiKey) {
-    throw new Error('RESEND_API_KEY is not configured');
+    throw new Error('RESEND_API_KEY is not set');
   }
 
   return new Resend(apiKey);
 };
 
-const hasSmtpCredentials = (): boolean => {
-  return Boolean(getEmailUser() && getEmailPass());
-};
-
-const getSmtpTransporter = () => {
-  const user = getEmailUser();
-  const pass = getEmailPass();
-
-  if (!user || !pass) {
-    throw new Error('EMAIL_USER or EMAIL_PASS is not configured');
-  }
-
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user,
-      pass,
-    },
-  });
-};
-
 export const isEmailConfigured = (): boolean => {
-  return Boolean(getResendApiKey()) || hasSmtpCredentials();
+  return Boolean(getResendApiKey());
 };
 
-export const sendOTPEmail = async (toEmail: string, toName: string, otp: string): Promise<void> => {
-  const safeName = String(toName || 'there').trim() || 'there';
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 400px; margin: 0 auto;">
-      <h2 style="color: #00C853;">Canteen App</h2>
-      <p>Hi ${safeName},</p>
-      <p>Your OTP code is:</p>
-      <h1 style="letter-spacing: 8px; color: #1A1A1A; font-size: 36px;">
-        ${otp}
-      </h1>
-      <p style="color: #666;">This code expires in 10 minutes.</p>
-      <p style="color: #666;">If you did not request this, ignore this email.</p>
-    </div>
-  `;
-  const resendApiKey = getResendApiKey();
-  let resendErrorMessage = '';
+export const sendOTPEmail = async (
+  toEmail: string,
+  toName: string,
+  otp: string,
+  college?: string | null,
+): Promise<void> => {
+  const safeName = escapeHtml(String(toName || 'there').trim() || 'there');
+  const canteenName = getCanteenName(college);
+  const safeCanteenName = escapeHtml(canteenName);
+  const { error } = await getResendClient().emails.send({
+    from: 'Canteen App <onboarding@resend.dev>',
+    to: [toEmail],
+    subject: `${otp} is your ${canteenName} OTP`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:32px;">
+        <h2 style="color:#00C853;margin-bottom:4px;">${safeCanteenName}</h2>
+        <p style="color:#666;margin-top:0;">Food ordering app</p>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0" />
+        <p>Hi ${safeName}, your OTP is:</p>
+        <div style="background:#F8F8F8;border-radius:12px;padding:24px;text-align:center;margin:24px 0;">
+          <span style="font-size:40px;font-weight:700;letter-spacing:12px;color:#1A1A1A;">
+            ${otp}
+          </span>
+        </div>
+        <p style="color:#666;font-size:14px;">
+          Expires in <strong>10 minutes</strong>.
+        </p>
+      </div>
+    `,
+  });
 
-  if (resendApiKey) {
-    const { error } = await getResendClient().emails.send({
-      from: 'Canteen App <onboarding@resend.dev>',
-      to: [toEmail],
-      subject: 'Your Canteen OTP Code',
-      html,
-    });
-
-    if (!error) {
-      return;
-    }
-
-    resendErrorMessage = error.message || 'Resend rejected the email';
-    console.error(`Resend OTP delivery failed for ${toEmail}:`, resendErrorMessage);
+  if (error) {
+    console.error('Resend error:', error);
+    throw new Error('Failed to send OTP email');
   }
-
-  if (hasSmtpCredentials()) {
-    await getSmtpTransporter().sendMail({
-      from: `"Canteen App" <${getEmailUser()}>`,
-      to: toEmail,
-      subject: 'Your Canteen OTP Code',
-      html,
-    });
-    return;
-  }
-
-  if (resendErrorMessage) {
-    throw new Error(resendErrorMessage);
-  }
-
-  throw new Error('No working OTP email provider is configured');
 };

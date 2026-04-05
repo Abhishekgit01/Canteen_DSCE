@@ -10,8 +10,32 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AVAILABLE_COLLEGES, COLLEGES, DEFAULT_COLLEGE } from '../constants/colleges';
 import type { College, RootStackScreenProps } from '../types';
 import { palette, shadows } from '../theme';
+
+const collegeCards: Record<
+  College,
+  {
+    subtitle: string;
+    icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+    accent: string;
+    soft: string;
+  }
+> = {
+  DSCE: {
+    subtitle: 'Roster-assisted signup and daily canteen ordering',
+    icon: 'school-outline',
+    accent: palette.brand,
+    soft: '#FCE7E1',
+  },
+  NIE: {
+    subtitle: 'Roster-assisted signup with a dedicated NIE menu and pickup schedule',
+    icon: 'office-building-outline',
+    accent: palette.info,
+    soft: palette.infoSoft,
+  },
+};
 
 const colleges: Array<{
   id: College;
@@ -20,28 +44,15 @@ const colleges: Array<{
   icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   accent: string;
   soft: string;
-}> = [
-  {
-    id: 'DSCE',
-    title: 'DSCE',
-    subtitle: 'Roster-assisted signup and daily canteen ordering',
-    icon: 'school-outline',
-    accent: palette.brand,
-    soft: '#FCE7E1',
-  },
-  {
-    id: 'NIE',
-    title: 'NIE',
-    subtitle: 'Manual signup today, same ordering flow and OTP access',
-    icon: 'office-building-outline',
-    accent: palette.info,
-    soft: palette.infoSoft,
-  },
-];
+}> = AVAILABLE_COLLEGES.map((id) => ({
+  id,
+  title: COLLEGES[id].name,
+  ...collegeCards[id],
+}));
 
 export default function WelcomeScreen({ navigation }: RootStackScreenProps<'Welcome'>) {
   const insets = useSafeAreaInsets();
-  const [selectedCollege, setSelectedCollege] = useState<College>('DSCE');
+  const [selectedCollege, setSelectedCollege] = useState<College>(DEFAULT_COLLEGE);
 
   const selectedCard = colleges.find((college) => college.id === selectedCollege) ?? colleges[0];
 
