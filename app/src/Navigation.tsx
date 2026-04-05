@@ -12,6 +12,7 @@ import OtpScreen from './screens/OtpScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import GoogleCollegeSelectScreen from './screens/GoogleCollegeSelectScreen';
 import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen';
+import TermsOfServiceScreen from './screens/TermsOfServiceScreen';
 import HomeScreen from './screens/HomeScreen';
 import SearchScreen from './screens/SearchScreen';
 import ItemDetailScreen from './screens/ItemDetailScreen';
@@ -140,6 +141,7 @@ export default function Navigation() {
               options={{ headerShown: false, gestureEnabled: false }} 
             />
             <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+            <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
           </>
         ) : (
           <>
@@ -149,6 +151,7 @@ export default function Navigation() {
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
             <Stack.Screen name="GoogleCollegeSelect" component={GoogleCollegeSelectScreen} />
             <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+            <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
           </>
         )}
       </Stack.Navigator>

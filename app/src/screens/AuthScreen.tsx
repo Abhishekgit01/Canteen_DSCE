@@ -392,6 +392,13 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
             >
               <Text style={styles.policyLink}>Privacy Policy</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={styles.policyLinkWrap}
+              onPress={() => navigation.navigate('TermsOfService')}
+            >
+              <Text style={styles.policyLink}>Terms of Service</Text>
+            </TouchableOpacity>
 
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
@@ -484,6 +491,12 @@ export default function AuthScreen({ navigation, route }: RootStackScreenProps<'
                   onPress={() => navigation.navigate('PrivacyPolicy')}
                 >
                   <Text style={styles.inlinePolicyLink}>Read Privacy Policy</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate('TermsOfService')}
+                >
+                  <Text style={styles.inlinePolicyLink}>Read Terms of Service</Text>
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>
