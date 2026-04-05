@@ -233,7 +233,10 @@ mongoose
     if (nieMenuCount === 0) {
       const dsceItems = await MenuItem.find({ college: 'DSCE' }).select(MENU_CACHE_SELECT).lean();
       const sourceItems = dsceItems.length > 0 ? dsceItems : baseMenuSeed;
-      await MenuItem.insertMany(sourceItems.map((item: any) => ({ ...item, college: 'NIE' })));
+      await MenuItem.insertMany(sourceItems.map((item: any) => {
+        const { _id, ...rest } = item;
+        return { ...rest, college: 'NIE' };
+      }));
       console.log(`🍽️ Seeded ${sourceItems.length} NIE menu items`);
     }
 
