@@ -80,3 +80,14 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.badge-preorder {
+  background: #a855f7;
+  color: white;
+}
+
+.countdown-text {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #a855f7;
+  margin-top: 4px;
+}

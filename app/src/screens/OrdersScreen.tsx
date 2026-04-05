@@ -157,6 +157,16 @@ export default function OrdersScreen() {
                   <Text style={styles.orderDate}>
                     {new Date(item.createdAt).toLocaleString()}
                   </Text>
+                  {item.isPreOrder && (
+                    <View style={styles.preOrderBadge}>
+                      <Text style={styles.preOrderBadgeText}>Pre-Order</Text>
+                      {item.scheduledFor && (
+                         <Text style={styles.preOrderDateText}>
+                           For: {new Date(item.scheduledFor).toLocaleString()}
+                         </Text>
+                      )}
+                    </View>
+                  )}
                 </View>
 
                 <View style={[styles.statusBadge, { backgroundColor: statusTheme.backgroundColor }]}>
@@ -263,6 +273,25 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontSize: 12,
     marginTop: 4,
+  },
+  preOrderBadge: {
+    marginTop: 4,
+    backgroundColor: palette.warningSoft,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  preOrderBadgeText: {
+    color: palette.accent,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  preOrderDateText: {
+    color: palette.accent,
+    fontSize: 10,
+    fontWeight: '600',
   },
   statusBadge: {
     paddingHorizontal: 12,

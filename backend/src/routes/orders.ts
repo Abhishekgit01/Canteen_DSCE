@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { resolveCollege, type SupportedCollege } from '../config/college.js';
 import { io } from '../server.js';
 import { MenuItem, Order, User } from '../models/index.js';
+import { PickupSettings } from '../models/PickupSettings.js';
 import { createRazorpayOrder, initiatePayment } from '../services/payment.service.js';
 import { finalizeOrder, finalizePaidOrder } from '../services/order-payment.service.js';
 import {
@@ -48,6 +49,8 @@ type CreateOrderBody = {
     chefNote?: string;
   }>;
   scheduledTime?: string;
+  scheduledFor?: string;
+  preOrderNote?: string;
 };
 
 function requireRoles(roles: UserRole[]) {
@@ -107,9 +110,11 @@ function getPaymentConfigResponse() {
 
 function getDefaultScheduledTime() {
   const slot = new Date();
-  slot.setMinutes(slot.getMinutes() + 15);
-  const hours = slot.getHours().toString().padStart(2, '0');
-  const minutes = slot.getMinutes().toString().padStart(2, '0');
+  const ISTOffset = 5.5 * 60 * 60 * 1000;
+  const IST = new Date(slot.getTime() + ISTOffset);
+  IST.setMinutes(IST.getMinutes() + 15);
+  const hours = IST.getUTCHours().toString().padStart(2, '0');
+  const minutes = IST.getUTCMinutes().toString().padStart(2, '0');
   return `${hours}:${minutes}`;
 }
 
@@ -231,14 +236,14 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const isOwner = String(order.userId) === req.user!.id;
+    const isOwner = String(order.userId) === String(req.user!.id);
     const isStaff = req.user!.role !== 'student';
 
     if (!isOwner && !isStaff) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    res.json(serializeOrder(order, { includeQrToken: isOwner }));
+    res.json(serializeOrder(order, { includeQrToken: isOwner || isStaff }));
   } catch {
     res.status(500).json({ error: 'Failed to fetch order' });
   }
@@ -252,25 +257,46 @@ router.post(
     let order: any = null;
 
     try {
-      const { items, scheduledTime } = req.body as CreateOrderBody;
+      const { items, scheduledTime, scheduledFor, preOrderNote } = req.body as CreateOrderBody;
       const college = req.user!.college;
-      const resolvedScheduledTime =
-        typeof scheduledTime === 'string' && scheduledTime.trim()
-          ? scheduledTime.trim()
-          : getDefaultScheduledTime();
+
+      let scheduledDate: Date | null = null;
+      let resolvedScheduledTime = typeof scheduledTime === 'string' && scheduledTime.trim()
+        ? scheduledTime.trim()
+        : getDefaultScheduledTime();
+
+      if (scheduledFor) {
+        scheduledDate = new Date(scheduledFor);
+        const now = new Date();
+        const maxAdvance = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+        if (scheduledDate <= now) {
+          return res.status(400).json({ error: 'Pre-order time must be in the future' });
+        }
+        if (scheduledDate > maxAdvance) {
+          return res.status(400).json({ error: 'Cannot pre-order more than 7 days in advance' });
+        }
+
+        const settings = await PickupSettings.findOne({ college }).lean();
+        if (settings) {
+          const ISTOffset = 5.5 * 60 * 60 * 1000;
+          const scheduledIST = new Date(scheduledDate.getTime() + ISTOffset);
+          const timeStr = `${String(scheduledIST.getUTCHours()).padStart(2, '0')}:${String(scheduledIST.getUTCMinutes()).padStart(2, '0')}`;
+
+          if (timeStr < settings.openingTime || timeStr > settings.closingTime) {
+            return res.status(400).json({ error: `Canteen is only open ${settings.openingTime} - ${settings.closingTime}` });
+          }
+        }
+        resolvedScheduledTime = scheduledFor; // Ignore normal format when pre-ordering
+      }
 
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'At least one item is required' });
       }
 
       const pickupRuntime = await getPickupRuntimeSettings(college);
-      if (!pickupRuntime.isCurrentlyOpen) {
-        return res.status(400).json({
-          error: pickupRuntime.closedMessage || `${college} canteen is currently closed`,
-        });
-      }
 
-      if (!(await isPickupTimeAllowed(resolvedScheduledTime, college))) {
+      if (!scheduledDate && !(await isPickupTimeAllowed(resolvedScheduledTime, college))) {
         return res.status(400).json({ error: `Pickup time is outside the ${college} canteen window` });
       }
 
@@ -326,6 +352,9 @@ router.post(
         status: 'pending_payment',
         paymentStatus: 'pending',
         college,
+        isPreOrder: !!scheduledDate,
+        scheduledFor: scheduledDate,
+        preOrderNote: preOrderNote ?? '',
       });
 
       const totalItemCount = orderItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -335,7 +364,7 @@ router.post(
       );
 
       order.estimatedPickupMinutes = estimatedPickupMinutes;
-      order.estimatedPickupAt = estimatedPickupAt;
+      order.estimatedPickupAt = scheduledDate ?? estimatedPickupAt;
 
       if (getPaymentMode() === 'razorpay') {
         const razorpay = await createRazorpayOrder(
@@ -412,12 +441,16 @@ router.post(
         return res.status(400).json({ error: 'Order is not awaiting payment' });
       }
 
-      await finalizePaidOrder(order, {
+      const finalized = await finalizePaidOrder(order, {
         paymentMethod: 'mock',
         razorpayPaymentId: transactionId,
       });
 
-      res.json({ success: true, orderId: String(order._id) });
+      res.json({ 
+        success: true, 
+        orderId: String(order._id),
+        qrToken: finalized.qrToken
+      });
     } catch {
       res.status(500).json({ error: 'Failed to confirm mock payment' });
     }
@@ -466,12 +499,16 @@ router.post(
         return res.status(400).json({ error: 'Order is not awaiting payment' });
       }
 
-      await finalizePaidOrder(order, {
+      const finalized = await finalizePaidOrder(order, {
         paymentMethod: 'upi_link',
         upiTransactionId: normalizedTransactionId,
       });
 
-      res.json({ success: true, orderId: String(order._id) });
+      res.json({ 
+        success: true, 
+        orderId: String(order._id),
+        qrToken: finalized.qrToken
+      });
     } catch {
       res.status(500).json({ error: 'Failed to confirm UPI payment' });
     }

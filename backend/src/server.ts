@@ -10,6 +10,7 @@ import { MENU_CACHE_SELECT, setMenuCache } from './cache/menuCache.js';
 import { DEFAULT_COLLEGE } from './config/college.js';
 import { User, MenuItem, Order } from './models/index.js';
 import { ensurePickupSettingsDocument } from './services/pickup-settings.service.js';
+import { sendPushNotification } from './services/notification.service.js';
 
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/dsce-canteen';
@@ -272,6 +273,49 @@ mongoose
         }
       } catch (err) {
         console.error('Zombie order cleanup error:', err);
+      }
+    }, 15 * 60 * 1000);
+
+    // Pre-order due notification check
+    setInterval(async () => {
+      try {
+        const now = new Date();
+        const soon = new Date(now.getTime() + 30 * 60 * 1000);
+
+        const dueOrders = await Order.find({
+          isPreOrder: true,
+          status: 'paid',
+          scheduledFor: { $gte: now, $lte: soon },
+          preOrderNotified: { $ne: true }
+        }).populate<{ student: { expoPushToken: string, name: string } }>('userId', 'expoPushToken name');
+
+        let notifiedCount = 0;
+        for (const order of dueOrders) {
+          const student = order.userId as any;
+          if (student?.expoPushToken) {
+            const formatTime = (time: Date | null) => {
+              if (!time) return '';
+              const ISTOffset = 5.5 * 60 * 60 * 1000;
+              const IST = new Date(time.getTime() + ISTOffset);
+              const hour = IST.getUTCHours() % 12 || 12;
+              const ampm = IST.getUTCHours() >= 12 ? 'PM' : 'AM';
+              return `${hour}:${String(IST.getUTCMinutes()).padStart(2, '0')} ${ampm}`;
+            };
+            await sendPushNotification(
+              student.expoPushToken,
+              '🍱 Your pre-order starts soon!',
+              `Your order will be ready around ${formatTime(order.scheduledFor as Date | null)}`,
+              { screen: 'Orders', orderId: order._id.toString() }
+            );
+            notifiedCount++;
+          }
+          await Order.findByIdAndUpdate(order._id, { preOrderNotified: true });
+        }
+        if (notifiedCount > 0) {
+          console.log(`⏱️ Notified ${notifiedCount} students about upcoming pre-orders`);
+        }
+      } catch (err) {
+        console.error('Pre-order notification check error:', err);
       }
     }, 15 * 60 * 1000);
     

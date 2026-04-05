@@ -138,7 +138,6 @@ export default function HomeScreen() {
       : menuItems.filter((item) => item.category === selectedCategory);
 
   const cartCount = items.reduce((sum, item) => sum + item.quantity, 0);
-  const orderingClosed = pickupSettings ? !pickupSettings.isCurrentlyOpen : false;
   const now = new Date();
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const currentRushHour = rushHourStatus?.current || null;
@@ -172,11 +171,6 @@ export default function HomeScreen() {
     items.find((entry) => entry.menuItem.id === menuItemId)?.quantity || 0;
 
   const handleAdd = async (item: MenuItem) => {
-    if (orderingClosed) {
-      setErrorMessage(pickupSettings?.closedMessage || 'Ordering is currently unavailable.');
-      return;
-    }
-
     const existingItem = items.find((entry) => entry.menuItem.id === item.id);
     const nextQuantity = (existingItem?.quantity || 0) + 1;
 
@@ -246,37 +240,18 @@ export default function HomeScreen() {
           <View style={styles.infoPill}>
             <AppIcon name="silverware-fork-knife" size={14} color={palette.brand} />
             <Text style={styles.infoPillText}>
-              {orderingClosed ? 'Ordering paused right now' : 'Freshly served today'}
+              Freshly served today
             </Text>
           </View>
           <View style={styles.infoHint}>
             <AppIcon name="clock" size={12} color={palette.muted} />
             <Text style={styles.infoHintText}>
               {pickupSettings
-                ? orderingClosed
-                  ? `Opens at ${formatPickupTime(pickupSettings.openingTime)}`
-                  : `Open till ${formatPickupTime(pickupSettings.closingTime)}`
+                ? `Open till ${formatPickupTime(pickupSettings.closingTime)}`
                 : `Quick pickup from ${formatPickupTime(getDefaultPickupTime(new Date(), userCollege))}`}
             </Text>
           </View>
         </View>
-
-        {orderingClosed ? (
-          <View style={styles.closedBanner}>
-            <View style={styles.closedBannerIcon}>
-              <AppIcon name="help-circle-outline" size={18} color={palette.surface} />
-            </View>
-            <View style={styles.closedBannerCopy}>
-              <Text style={styles.closedBannerTitle}>Canteen Closed</Text>
-              <Text style={styles.closedBannerText}>
-                {pickupSettings?.closedMessage || 'Ordering is currently unavailable.'}
-              </Text>
-              <Text style={styles.closedBannerText}>
-                Opens at {formatPickupTime(pickupSettings?.openingTime || '09:00')}
-              </Text>
-            </View>
-          </View>
-        ) : null}
 
         {upcomingRushHour ? (
           <View style={styles.rushBanner}>

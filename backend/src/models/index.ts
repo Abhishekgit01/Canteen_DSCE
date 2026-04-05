@@ -389,6 +389,22 @@ const orderSchema = new mongoose.Schema({
     trim: true,
     default: DEFAULT_COLLEGE,
   },
+  isPreOrder: {
+    type: Boolean,
+    default: false,
+  },
+  scheduledFor: {
+    type: Date,
+    default: null,
+  },
+  preOrderNote: {
+    type: String,
+    default: '',
+  },
+  preOrderNotified: {
+    type: Boolean,
+    default: false,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

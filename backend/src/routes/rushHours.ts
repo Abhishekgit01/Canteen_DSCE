@@ -78,7 +78,9 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
 }
 
 function getCurrentTimeString(now = new Date()) {
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const ISTOffset = 5.5 * 60 * 60 * 1000;
+  const IST = new Date(now.getTime() + ISTOffset);
+  return `${String(IST.getUTCHours()).padStart(2, '0')}:${String(IST.getUTCMinutes()).padStart(2, '0')}`;
 }
 
 function normalizeDays(value: unknown) {
@@ -182,7 +184,9 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const college = normalizeCollege(req.query.college) || DEFAULT_COLLEGE;
     const now = new Date();
-    const currentDay = now.getDay();
+    const ISTOffset = 5.5 * 60 * 60 * 1000;
+    const IST = new Date(now.getTime() + ISTOffset);
+    const currentDay = IST.getUTCDay();
     const currentTime = getCurrentTimeString(now);
 
     const rushHours = await RushHour.find({

@@ -43,7 +43,6 @@ export default function ItemDetailScreen() {
   const [scheduledTime, setScheduledTime] = useState(getDefaultPickupTime(new Date(), userCollege));
   const [chefNote, setChefNote] = useState('');
   const selectedPickupTime = scheduledTime || getDefaultPickupTime(new Date(), userCollege);
-  const orderingClosed = pickupSettings ? !pickupSettings.isCurrentlyOpen : false;
 
   useEffect(() => {
     if (pickupSettings) {
@@ -71,10 +70,6 @@ export default function ItemDetailScreen() {
   }, [pickupSettings, setPickupSettings, userCollege]);
 
   const handleAddToCart = async () => {
-    if (orderingClosed) {
-      return;
-    }
-
     await addItem({
       menuItem: item,
       quantity,
@@ -168,14 +163,6 @@ export default function ItemDetailScreen() {
             ) : null}
 
             <View style={styles.section}>
-              {orderingClosed ? (
-                <View style={styles.closedCard}>
-                  <Text style={styles.closedCardTitle}>Ordering paused</Text>
-                  <Text style={styles.closedCardText}>
-                    {pickupSettings?.closedMessage || 'The canteen is currently closed.'}
-                  </Text>
-                </View>
-              ) : null}
 
               <PickupTimePanel
                 value={selectedPickupTime}
@@ -231,7 +218,7 @@ export default function ItemDetailScreen() {
         </View>
         <TouchableOpacity activeOpacity={0.92} style={styles.addButton} onPress={() => void handleAddToCart()}>
           <AppIcon name="cart-outline" size={18} color={palette.surface} />
-          <Text style={styles.addButtonText}>{orderingClosed ? 'Ordering Closed' : 'Add to Cart'}</Text>
+          <Text style={styles.addButtonText}>Add to Cart</Text>
         </TouchableOpacity>
       </View>
     </View>

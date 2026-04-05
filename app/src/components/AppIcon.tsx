@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 export type AppIconName =
   | 'arrow-left'
   | 'bell'
+  | 'calendar'
   | 'camera'
   | 'cart-outline'
   | 'cellphone-nfc'
@@ -31,6 +32,7 @@ export type AppIconName =
 const glyphs: Record<AppIconName, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
   'arrow-left': 'arrow-left',
   bell: 'bell-outline',
+  calendar: 'calendar-outline',
   camera: 'camera-outline',
   'cart-outline': 'cart-outline',
   'cellphone-nfc': 'cellphone-nfc',

@@ -103,7 +103,6 @@ export default function SearchScreen() {
   }, [menuItems, normalizedQuery]);
 
   const cartCount = items.reduce((sum, item) => sum + item.quantity, 0);
-  const orderingClosed = pickupSettings ? !pickupSettings.isCurrentlyOpen : false;
 
   const rememberSearch = (value: string) => {
     const trimmed = value.trim();
@@ -128,11 +127,6 @@ export default function SearchScreen() {
   };
 
   const handleAdd = async (item: MenuItem) => {
-    if (orderingClosed) {
-      setErrorMessage(pickupSettings?.closedMessage || 'Ordering is currently unavailable.');
-      return;
-    }
-
     const existingItem = items.find((entry) => entry.menuItem.id === item.id);
     const nextQuantity = (existingItem?.quantity || 0) + 1;
 

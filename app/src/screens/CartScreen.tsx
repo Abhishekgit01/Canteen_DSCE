@@ -8,7 +8,9 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Switch,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -55,6 +57,12 @@ export default function CartScreen() {
   const [selectedPickupTime, setSelectedPickupTime] = useState(
     items[0]?.scheduledTime || getDefaultPickupTime(new Date(), userCollege),
   );
+
+  const [isPreOrder, setIsPreOrder] = useState(false);
+  const [scheduledFor, setScheduledFor] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [preOrderNote, setPreOrderNote] = useState('');
 
   useEffect(() => {
     if (pickupSettings && rushHourStatus) {
@@ -123,7 +131,6 @@ export default function CartScreen() {
   const subtotal = total();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const canteenName = getCanteenName(user?.college);
-  const orderingClosed = pickupSettings ? !pickupSettings.isCurrentlyOpen : false;
   const estimatedMinutes = useMemo(() => {
     if (!pickupSettings) {
       return null;
@@ -147,8 +154,8 @@ export default function CartScreen() {
       return;
     }
 
-    if (orderingClosed) {
-      setErrorMessage(pickupSettings?.closedMessage || 'Ordering is currently unavailable.');
+    if (isPreOrder && !scheduledFor) {
+      setErrorMessage('Please completely select a date and time for your pre-order.');
       return;
     }
 
@@ -174,6 +181,8 @@ export default function CartScreen() {
       const response = await orderApi.createOrder({
         items: orderItems,
         scheduledTime: selectedPickupTime,
+        scheduledFor: isPreOrder && scheduledFor ? scheduledFor.toISOString() : undefined,
+        preOrderNote: isPreOrder ? preOrderNote : undefined,
       });
 
       navigation.navigate('Payment', response.data);
@@ -185,11 +194,6 @@ export default function CartScreen() {
   };
 
   const handleAddSuggestedItem = async (item: MenuItem) => {
-    if (orderingClosed) {
-      setErrorMessage(pickupSettings?.closedMessage || 'Ordering is currently unavailable.');
-      return;
-    }
-
     const existingItem = items.find((entry) => entry.menuItem.id === item.id);
     const nextQuantity = (existingItem?.quantity || 0) + 1;
 
@@ -268,16 +272,18 @@ export default function CartScreen() {
           </View>
         </View>
 
-        <View style={styles.card}>
-          <PickupTimePanel
-            value={selectedPickupTime}
-            onChange={handlePickupTimeChange}
-            contextLabel="Selected for the whole order"
-            college={userCollege}
-          />
-        </View>
+        {!isPreOrder && (
+          <View style={styles.card}>
+            <PickupTimePanel
+              value={selectedPickupTime}
+              onChange={handlePickupTimeChange}
+              contextLabel="Selected for the whole order"
+              college={userCollege}
+            />
+          </View>
+        )}
 
-        {pickupSettings ? (
+        {pickupSettings && !isPreOrder ? (
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Pickup Estimate</Text>
             <View style={styles.estimateRow}>
@@ -286,19 +292,15 @@ export default function CartScreen() {
               </View>
               <View style={styles.estimateCopy}>
                 <Text style={styles.estimateTitle}>
-                  {orderingClosed
-                    ? 'Ordering unavailable right now'
-                    : `Ready in about ${estimatedMinutes || 15} minutes`}
+                  {`Ready in about ${estimatedMinutes || 15} minutes`}
                 </Text>
                 <Text style={styles.estimateText}>
-                  {orderingClosed
-                    ? pickupSettings.closedMessage
-                    : estimatedPickupAt
-                      ? `Approx. pickup around ${estimatedPickupAt.toLocaleTimeString([], {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}`
-                      : 'Pickup estimate will appear here.'}
+                  {estimatedPickupAt
+                    ? `Approx. pickup around ${estimatedPickupAt.toLocaleTimeString([], {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}`
+                    : 'Pickup estimate will appear here.'}
                 </Text>
                 {rushHourStatus?.isRushHour ? (
                   <Text style={styles.estimateRushText}>
@@ -309,6 +311,84 @@ export default function CartScreen() {
             </View>
           </View>
         ) : null}
+
+        <View style={styles.card}>
+          <View style={styles.preOrderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionTitle}>Pre-Order Options</Text>
+              <Text style={styles.sectionHint}>Schedule your meal in advance.</Text>
+            </View>
+            <Switch
+              value={isPreOrder}
+              onValueChange={setIsPreOrder}
+              trackColor={{ false: palette.line, true: palette.surfaceMuted }}
+              thumbColor={isPreOrder ? palette.brand : palette.surface}
+            />
+          </View>
+
+          {isPreOrder && (
+            <View style={styles.preOrderControls}>
+              <View style={styles.dateTimePickerRow}>
+                <TouchableOpacity style={styles.dateTimeButton} onPress={() => setShowDatePicker(true)}>
+                  <AppIcon name="calendar" size={16} color={palette.brand} />
+                  <Text style={styles.dateTimeButtonText}>
+                    {scheduledFor ? scheduledFor.toLocaleDateString() : 'Select Date'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.dateTimeButton} onPress={() => setShowTimePicker(true)}>
+                  <AppIcon name="clock" size={16} color={palette.brand} />
+                  <Text style={styles.dateTimeButtonText}>
+                    {scheduledFor ? scheduledFor.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Select Time'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {showDatePicker && (
+                <DateTimePicker
+                  value={scheduledFor || new Date()}
+                  mode="date"
+                  display="default"
+                  minimumDate={new Date()}
+                  onChange={(event, date) => {
+                    setShowDatePicker(false);
+                    if (date && event.type === 'set') {
+                      const newDate = scheduledFor ? new Date(scheduledFor) : new Date();
+                      newDate.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+                      setScheduledFor(newDate);
+                    }
+                  }}
+                />
+              )}
+
+              {showTimePicker && (
+                <DateTimePicker
+                  value={scheduledFor || new Date()}
+                  mode="time"
+                  display="default"
+                  onChange={(event, date) => {
+                    setShowTimePicker(false);
+                    if (date && event.type === 'set') {
+                      const newDate = scheduledFor ? new Date(scheduledFor) : new Date();
+                      newDate.setHours(date.getHours(), date.getMinutes());
+                      setScheduledFor(newDate);
+                    }
+                  }}
+                />
+              )}
+
+              <Text style={[styles.noteLabel, { marginTop: 8 }]}>Pre-order Note</Text>
+              <TextInput
+                style={styles.noteInput}
+                value={preOrderNote}
+                onChangeText={setPreOrderNote}
+                placeholder="Any special instructions for later?"
+                placeholderTextColor={palette.subtle}
+                multiline
+                maxLength={200}
+              />
+            </View>
+          )}
+        </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Your Order</Text>
@@ -481,9 +561,9 @@ export default function CartScreen() {
           activeOpacity={0.92}
           style={[
             styles.checkoutButton,
-            (items.length === 0 || isCreatingOrder || orderingClosed) && styles.checkoutButtonDisabled,
+            (items.length === 0 || isCreatingOrder) && styles.checkoutButtonDisabled,
           ]}
-          disabled={items.length === 0 || isCreatingOrder || orderingClosed}
+          disabled={items.length === 0 || isCreatingOrder}
           onPress={handleCreateOrder}
         >
           {isCreatingOrder ? (
@@ -493,9 +573,7 @@ export default function CartScreen() {
             </View>
           ) : (
             <View style={styles.checkoutRow}>
-              <Text style={styles.checkoutButtonText}>
-                {orderingClosed ? 'Ordering unavailable' : 'Continue to Payment'}
-              </Text>
+              <Text style={styles.checkoutButtonText}>Continue to Payment</Text>
               <AppIcon name="chevron-right" size={18} color={palette.surface} />
             </View>
           )}
@@ -557,6 +635,34 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontSize: 13,
     lineHeight: 19,
+  },
+  preOrderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  preOrderControls: {
+    marginTop: 6,
+    gap: 12,
+  },
+  dateTimePickerRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  dateTimeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: 14,
+  },
+  dateTimeButtonText: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: '700',
   },
   cardStack: {
     gap: 14,

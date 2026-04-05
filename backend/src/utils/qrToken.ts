@@ -18,7 +18,7 @@ export function buildQrToken(
   const payload = {
     orderId: toId(order._id),
     userId: toId(order.userId),
-    amount: order.totalAmount,
+    amount: Number(order.totalAmount),
     exp: Math.floor(expiresAt.getTime() / 1000),
   };
 

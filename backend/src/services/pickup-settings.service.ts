@@ -29,7 +29,9 @@ export type PickupRuntimeSettings = PickupSettingsRecord & {
 };
 
 function getCurrentTimeString(now = new Date()) {
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const ISTOffset = 5.5 * 60 * 60 * 1000;
+  const IST = new Date(now.getTime() + ISTOffset);
+  return `${String(IST.getUTCHours()).padStart(2, '0')}:${String(IST.getUTCMinutes()).padStart(2, '0')}`;
 }
 
 function timeToMinutes(value: string) {

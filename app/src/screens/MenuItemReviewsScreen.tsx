@@ -50,15 +50,18 @@ export default function MenuItemReviewsScreen({
 
       setErrorMessage('');
       const response = await reviewsApi.getItemReviews(menuItemId, targetPage, sort);
-      setMenuItem({
-        name: response.menuItem.name,
-        averageRating: response.menuItem.averageRating,
-        totalReviews: response.menuItem.totalReviews,
-        ratingBreakdown: response.menuItem.ratingBreakdown,
-      });
-      setReviews((current) => (replace ? response.reviews : [...current, ...response.reviews]));
-      setPage(response.pagination.page);
-      setPages(response.pagination.pages);
+      if (response.menuItem) {
+        setMenuItem({
+          name: response.menuItem.name,
+          averageRating: response.menuItem.averageRating || 0,
+          totalReviews: response.menuItem.totalReviews || 0,
+          ratingBreakdown: response.menuItem.ratingBreakdown,
+        });
+      }
+      const newReviews = response.reviews || [];
+      setReviews((current) => (replace ? newReviews : [...current, ...newReviews]));
+      setPage(response.pagination?.page || 1);
+      setPages(response.pagination?.pages || 1);
     } catch (error: any) {
       setErrorMessage(error?.response?.data?.error || 'Could not load reviews right now.');
     } finally {
@@ -125,7 +128,7 @@ export default function MenuItemReviewsScreen({
             <Text style={styles.title}>{menuItem?.name || menuItemName || 'Reviews'}</Text>
             <Text style={styles.subtitle}>
               {menuItem && menuItem.totalReviews > 0
-                ? `${menuItem.averageRating.toFixed(1)} average from ${menuItem.totalReviews} verified reviews`
+                ? `${(menuItem.averageRating || 0).toFixed(1)} average from ${menuItem.totalReviews} verified reviews`
                 : 'Reviews from recent student orders will appear here.'}
             </Text>
           </View>
@@ -136,7 +139,7 @@ export default function MenuItemReviewsScreen({
         {menuItem ? (
           <View style={styles.summaryCard}>
             <View style={styles.summaryMain}>
-              <Text style={styles.summaryRating}>{menuItem.averageRating.toFixed(1)}</Text>
+              <Text style={styles.summaryRating}>{(menuItem.averageRating || 0).toFixed(1)}</Text>
               <View>
                 <Text style={styles.summaryStars}>{'★'.repeat(Math.round(menuItem.averageRating || 0))}</Text>
                 <Text style={styles.summaryCount}>{menuItem.totalReviews} reviews</Text>
@@ -213,9 +216,9 @@ export default function MenuItemReviewsScreen({
               {review.title ? <Text style={styles.reviewTitle}>{review.title}</Text> : null}
               {review.body ? <Text style={styles.reviewBody}>{review.body}</Text> : null}
 
-              {review.tags.length > 0 ? (
+              {(review.tags || []).length > 0 ? (
                 <View style={styles.reviewTagWrap}>
-                  {review.tags.map((tag) => (
+                  {(review.tags || []).map((tag) => (
                     <View key={tag} style={styles.reviewTag}>
                       <Text style={styles.reviewTagText}>{tag}</Text>
                     </View>

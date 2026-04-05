@@ -346,6 +346,8 @@ export const orderApi = {
       chefNote?: string;
     }>;
     scheduledTime: string;
+    scheduledFor?: string;
+    preOrderNote?: string;
   }): Promise<AxiosResponse<PaymentInitResponse>> => {
     const response = await api.post<CreateOrderResponse>('/orders/create', data);
 

@@ -11,6 +11,9 @@ interface Order {
   totalAmount: number;
   status: string;
   college?: string;
+  isPreOrder?: boolean;
+  scheduledFor?: string;
+  preOrderNote?: string;
   createdAt: string;
 }
 
@@ -20,6 +23,17 @@ const resolveCollege = (value?: string | null) => (value === 'NIE' ? 'NIE' : 'DS
 
 const formatTemperature = (value?: string) =>
   value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
+
+function getCountdown(scheduledFor: string) {
+  const diff = new Date(scheduledFor).getTime() - Date.now();
+  if (diff <= 0) return 'Due now';
+  
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  
+  if (hours > 0) return `Due in ${hours}h ${minutes}m`;
+  return `Due in ${minutes}m`;
+}
 
 export default function OrdersPage() {
   const { user } = useAuth();
@@ -57,7 +71,9 @@ export default function OrdersPage() {
 
   const filteredOrders = filter === 'all'
     ? orders
-    : orders.filter(o => o.status === filter);
+    : filter === 'preorder'
+      ? orders.filter(o => o.isPreOrder)
+      : orders.filter(o => o.status === filter);
 
   return (
     <div className="orders-page">
@@ -65,7 +81,7 @@ export default function OrdersPage() {
 
       <div className="orders-toolbar">
         <div className="filters">
-          {['all', 'pending_payment', 'paid', 'preparing', 'fulfilled'].map((f) => (
+          {['all', 'preorder', 'pending_payment', 'paid', 'preparing', 'fulfilled'].map((f) => (
             <button
               key={f}
               className={`filter-btn ${filter === f ? 'active' : ''}`}
@@ -106,7 +122,24 @@ export default function OrdersPage() {
         <tbody>
           {filteredOrders.map((order) => (
             <tr key={order._id}>
-              <td>{new Date(order.createdAt).toLocaleString()}</td>
+              <td>
+                <div>{new Date(order.createdAt).toLocaleString()}</div>
+                {order.isPreOrder && (
+                  <div style={{ marginTop: 4 }}>
+                    <span className="badge badge-preorder" style={{ fontSize: '0.7em', padding: '2px 6px' }}>PRE-ORDER</span>
+                    {order.scheduledFor && (
+                      <>
+                        <div style={{ fontSize: '0.8em', color: '#666', marginTop: 2 }}>
+                          {new Date(order.scheduledFor).toLocaleString()}
+                        </div>
+                        <div className="countdown-text">
+                          {getCountdown(order.scheduledFor)}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </td>
               <td>{resolveCollege(order.college || order.userId?.college)}</td>
               <td>{order.userId?.usn || 'N/A'}</td>
               <td>{order.userId?.name || 'N/A'}</td>
@@ -132,6 +165,12 @@ export default function OrdersPage() {
                     ) : null}
                   </div>
                 ))}
+                {order.preOrderNote && (
+                  <div className="chef-note" style={{ marginTop: 8 }}>
+                    <span className="chef-note-icon" style={{ backgroundColor: '#fff3cd', color: '#856404' }}>Pre-order note</span>
+                    <span>{order.preOrderNote}</span>
+                  </div>
+                )}
               </td>
               <td>₹{order.totalAmount}</td>
               <td>

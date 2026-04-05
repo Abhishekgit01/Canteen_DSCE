@@ -64,6 +64,9 @@ export interface Order {
     chefNote?: string;
   }[];
   scheduledTime: string;
+  isPreOrder?: boolean;
+  scheduledFor?: string | null;
+  preOrderNote?: string;
   estimatedPickupMinutes?: number;
   estimatedPickupAt?: string;
   totalAmount: number;
