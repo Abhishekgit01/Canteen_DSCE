@@ -11,6 +11,10 @@ import {
   NotificationTemplates,
   sendPushNotification,
 } from '../services/notification.service.js';
+import {
+  calculateEstimatedPickup,
+  getPickupRuntimeSettings,
+} from '../services/pickup-settings.service.js';
 import { serializeOrder } from '../utils/order.utils.js';
 import { getPaymentMode, PaymentMode } from '../utils/paymentMode.js';
 import { isPickupTimeAllowed } from '../utils/pickupTime.js';
@@ -259,7 +263,14 @@ router.post(
         return res.status(400).json({ error: 'At least one item is required' });
       }
 
-      if (!isPickupTimeAllowed(resolvedScheduledTime, college)) {
+      const pickupRuntime = await getPickupRuntimeSettings(college);
+      if (!pickupRuntime.isCurrentlyOpen) {
+        return res.status(400).json({
+          error: pickupRuntime.closedMessage || `${college} canteen is currently closed`,
+        });
+      }
+
+      if (!(await isPickupTimeAllowed(resolvedScheduledTime, college))) {
         return res.status(400).json({ error: `Pickup time is outside the ${college} canteen window` });
       }
 
@@ -316,6 +327,15 @@ router.post(
         paymentStatus: 'pending',
         college,
       });
+
+      const totalItemCount = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+      const { estimatedPickupAt, estimatedPickupMinutes } = await calculateEstimatedPickup(
+        college,
+        totalItemCount,
+      );
+
+      order.estimatedPickupMinutes = estimatedPickupMinutes;
+      order.estimatedPickupAt = estimatedPickupAt;
 
       if (getPaymentMode() === 'razorpay') {
         const razorpay = await createRazorpayOrder(

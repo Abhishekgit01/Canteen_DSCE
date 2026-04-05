@@ -11,11 +11,13 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { menuApi } from '../api';
+import { menuApi, pickupSettingsApi } from '../api';
 import AppIcon from '../components/AppIcon';
 import MenuItemSkeleton from '../components/MenuItemSkeleton';
+import { DEFAULT_COLLEGE, normalizeCollege } from '../constants/colleges';
 import { CAT_MESSAGES } from '../constants/loading';
 import { useAuthStore } from '../stores/authStore';
+import { useCanteenStore } from '../stores/canteenStore';
 import { useCartStore } from '../stores/cartStore';
 import { MenuItem, RootStackNavigationProp } from '../types';
 import { palette, shadows } from '../theme';
@@ -28,12 +30,42 @@ export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const userCollege = user?.college;
+  const resolvedCollege = normalizeCollege(userCollege) || DEFAULT_COLLEGE;
   const { items, addItem, total } = useCartStore();
+  const pickupSettings = useCanteenStore(
+    (state) => state.pickupSettingsByCollege[resolvedCollege] || null,
+  );
+  const setPickupSettings = useCanteenStore((state) => state.setPickupSettings);
   const [query, setQuery] = useState('');
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [recentSearches, setRecentSearches] = useState(defaultRecentSearches);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    if (pickupSettings) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPickupSettings = async () => {
+      try {
+        const response = await pickupSettingsApi.getSettings(userCollege);
+        if (!cancelled) {
+          setPickupSettings(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch pickup settings:', error);
+      }
+    };
+
+    void loadPickupSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pickupSettings, setPickupSettings, userCollege]);
 
   useEffect(() => {
     const loadMenu = async () => {
@@ -71,6 +103,7 @@ export default function SearchScreen() {
   }, [menuItems, normalizedQuery]);
 
   const cartCount = items.reduce((sum, item) => sum + item.quantity, 0);
+  const orderingClosed = pickupSettings ? !pickupSettings.isCurrentlyOpen : false;
 
   const rememberSearch = (value: string) => {
     const trimmed = value.trim();
@@ -95,6 +128,11 @@ export default function SearchScreen() {
   };
 
   const handleAdd = async (item: MenuItem) => {
+    if (orderingClosed) {
+      setErrorMessage(pickupSettings?.closedMessage || 'Ordering is currently unavailable.');
+      return;
+    }
+
     const existingItem = items.find((entry) => entry.menuItem.id === item.id);
     const nextQuantity = (existingItem?.quantity || 0) + 1;
 

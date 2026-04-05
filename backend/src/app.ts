@@ -15,6 +15,7 @@ import adminRoutes from './routes/admin.js';
 import reviewsRoutes from './routes/reviews.js';
 import rushHoursRoutes from './routes/rushHours.js';
 import notificationsRoutes from './routes/notifications.js';
+import pickupSettingsRoutes from './routes/pickupSettings.js';
 
 const app = express();
 
@@ -170,6 +171,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/reviews', reviewsRoutes);
 app.use('/api/rush-hours', rushHoursRoutes);
+app.use('/api/pickup-settings', pickupSettingsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 
 export default app;

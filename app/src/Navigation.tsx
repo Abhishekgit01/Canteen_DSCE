@@ -27,13 +27,14 @@ import OrdersScreen from './screens/OrdersScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ScannerScreen from './screens/ScannerScreen';
 import { connectSocket, disconnectSocket } from './api/socket';
-import { saveExpoPushToken } from './api';
+import { pickupSettingsApi, rushHoursApi, saveExpoPushToken } from './api';
 import {
   handleInitialNotification,
   registerForPushNotifications,
   setupNotificationListeners,
 } from './services/notifications';
 import { useAuthStore } from './stores/authStore';
+import { useCanteenStore } from './stores/canteenStore';
 import { useCartStore } from './stores/cartStore';
 import { MainTabParamList, RootStackParamList } from './types';
 import { palette, shadows } from './theme';
@@ -109,6 +110,8 @@ function MainTabs() {
 export default function Navigation() {
   const { loadAuth, token, user, isLoading } = useAuthStore();
   const { loadCart } = useCartStore();
+  const setPickupSettings = useCanteenStore((state) => state.setPickupSettings);
+  const setRushStatus = useCanteenStore((state) => state.setRushStatus);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -128,6 +131,52 @@ export default function Navigation() {
     disconnectSocket();
     return undefined;
   }, [token, user]);
+
+  useEffect(() => {
+    if (!token || !user?.college) {
+      return undefined;
+    }
+
+    const college = user.college;
+    const socket = connectSocket(token);
+    let cancelled = false;
+
+    const refreshRushStatus = async () => {
+      const response = await rushHoursApi.getStatus(college);
+      if (!cancelled) {
+        setRushStatus(college, response.data);
+      }
+    };
+
+    const refreshPickupSettings = async () => {
+      const response = await pickupSettingsApi.getSettings(college);
+      if (!cancelled) {
+        setPickupSettings(response.data);
+      }
+    };
+
+    void Promise.allSettled([refreshRushStatus(), refreshPickupSettings()]);
+
+    const rushEvent = `rush:updated:${college}`;
+    const pickupEvent = `pickup:updated:${college}`;
+
+    const handleRushUpdate = () => {
+      void refreshRushStatus();
+    };
+
+    const handlePickupUpdate = () => {
+      void refreshPickupSettings();
+    };
+
+    socket.on(rushEvent, handleRushUpdate);
+    socket.on(pickupEvent, handlePickupUpdate);
+
+    return () => {
+      cancelled = true;
+      socket.off(rushEvent, handleRushUpdate);
+      socket.off(pickupEvent, handlePickupUpdate);
+    };
+  }, [setPickupSettings, setRushStatus, token, user?.college]);
 
   useEffect(() => {
     const cleanup = setupNotificationListeners(navigationRef);

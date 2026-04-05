@@ -9,6 +9,7 @@ import app from './app.js';
 import { MENU_CACHE_SELECT, setMenuCache } from './cache/menuCache.js';
 import { DEFAULT_COLLEGE } from './config/college.js';
 import { User, MenuItem, Order } from './models/index.js';
+import { ensurePickupSettingsDocument } from './services/pickup-settings.service.js';
 
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/dsce-canteen';
@@ -242,6 +243,7 @@ mongoose
 
     try {
       for (const college of ['DSCE', 'NIE'] as const) {
+        await ensurePickupSettingsDocument(college);
         const items = await MenuItem.find({ college, isAvailable: true })
           .select(MENU_CACHE_SELECT)
           .sort({ category: 1, name: 1 })

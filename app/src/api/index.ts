@@ -14,6 +14,7 @@ import type {
   PendingReviewItem,
   PaymentInitResponse,
   PaymentMode,
+  PickupSettings,
   Review,
   RushHourRule,
   RushHourStatus,
@@ -29,6 +30,10 @@ type MenuCacheEntry = {
 };
 
 type RushHourApiRecord = Omit<RushHourRule, 'college'> & {
+  college?: string | null;
+};
+
+type PickupSettingsApiRecord = Omit<PickupSettings, 'college'> & {
   college?: string | null;
 };
 
@@ -142,6 +147,39 @@ function normalizeRushHourStatus(value: {
   };
 }
 
+function normalizePickupSettings(value: PickupSettingsApiRecord): PickupSettings {
+  const sanitizeTime = (input: unknown, fallback: string) =>
+    typeof input === 'string' && /^\d{2}:\d{2}$/.test(input.trim()) ? input.trim() : fallback;
+  const toNumber = (input: unknown, fallback: number) => {
+    const next = Number(input);
+    return Number.isFinite(next) ? next : fallback;
+  };
+
+  return {
+    college: resolveMenuCollege(value?.college),
+    basePickupMinutes: toNumber(value?.basePickupMinutes, 15),
+    rushHourExtra: toNumber(value?.rushHourExtra, 10),
+    perItemExtra: toNumber(value?.perItemExtra, 2),
+    maxPickupMinutes: toNumber(value?.maxPickupMinutes, 45),
+    openingTime: sanitizeTime(value?.openingTime, '09:00'),
+    closingTime: sanitizeTime(value?.closingTime, '20:00'),
+    breakStart: sanitizeTime(value?.breakStart, '15:00'),
+    breakEnd: sanitizeTime(value?.breakEnd, '16:00'),
+    hasBreak: Boolean(value?.hasBreak),
+    isOpen: value?.isOpen !== false,
+    closedMessage:
+      typeof value?.closedMessage === 'string' && value.closedMessage.trim()
+        ? value.closedMessage.trim()
+        : 'Canteen is currently closed',
+    isCurrentlyOpen: Boolean(value?.isCurrentlyOpen),
+    currentTime:
+      typeof value?.currentTime === 'string' && /^\d{2}:\d{2}$/.test(value.currentTime.trim())
+        ? value.currentTime.trim()
+        : '00:00',
+    updatedAt: typeof value?.updatedAt === 'string' ? value.updatedAt : undefined,
+  };
+}
+
 type RazorpayCreateOrderResponse = {
   order: Order;
   razorpay: {
@@ -235,6 +273,17 @@ export const rushHoursApi = {
     return {
       ...response,
       data: normalizeRushHourStatus(response.data),
+    };
+  },
+};
+
+export const pickupSettingsApi = {
+  getSettings: async (college?: string | null) => {
+    const response = await api.get(`/pickup-settings/${resolveMenuCollege(college)}`);
+
+    return {
+      ...response,
+      data: normalizePickupSettings(response.data),
     };
   },
 };

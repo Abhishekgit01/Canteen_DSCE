@@ -1,11 +1,11 @@
-## PROMPT — Smart Notifications + Rate Your Meal + Public Reviews
+## PROMPT — Fix Pickup Times + Rush Hour Sync + Reviews in App
 
 Copy into a fresh conversation:
 
 ---
 
 > **READ EVERYTHING BEFORE WRITING A SINGLE LINE OF CODE.**
-> Do not touch payment, webhook, QR, Razorpay, rush hours, or chef notes.
+> Do not touch payment, webhook, QR, Razorpay, notifications, or chef notes.
 > Show diff before every change. Never touch .env files.
 >
 > ---
@@ -16,1024 +16,1035 @@ Copy into a fresh conversation:
 > # Models
 > cat backend/src/models/Order.ts
 > cat backend/src/models/MenuItem.ts
-> cat backend/src/models/User.ts
+> cat backend/src/models/RushHour.ts 2>/dev/null || echo "MISSING"
+> cat backend/src/models/Review.ts 2>/dev/null || echo "MISSING"
 >
 > # Routes
+> cat backend/src/routes/rushHours.ts 2>/dev/null || echo "MISSING"
+> cat backend/src/routes/reviews.ts 2>/dev/null || echo "MISSING"
 > cat backend/src/routes/orders.ts
 > cat backend/src/routes/menu.ts
-> cat backend/src/routes/admin.ts
+> cat backend/src/app.ts
 >
-> # Mobile
-> cat app/src/screens/OrdersScreen.tsx
-> cat app/src/screens/MenuScreen.tsx
-> cat app/src/api/index.ts
-> cat app/src/stores/authStore.ts
-> cat app/app.json
->
-> # Admin
+> # Admin pages
+> find admin/src/pages -name "*.tsx" -exec echo "=== {} ===" \; -exec cat {} \;
 > cat admin/src/api/index.ts
 > cat admin/src/App.tsx
-> find admin/src/pages -name "*.tsx" -exec echo "=== {} ===" \; -exec cat {} \;
+> cat admin/vercel.json
 >
-> # Check what notification packages exist
-> grep -rn "expo-notifications\|push\|FCM\|firebase" \
->   app/package.json app/app.json
+> # Mobile screens
+> cat app/src/screens/MenuScreen.tsx
+> cat app/src/screens/CartScreen.tsx
+> cat app/src/screens/OrdersScreen.tsx
+> cat app/src/screens/MenuItemReviewsScreen.tsx 2>/dev/null || echo "MISSING"
+> cat app/src/screens/RateOrderScreen.tsx 2>/dev/null || echo "MISSING"
+> cat app/src/api/index.ts
+> cat app/src/navigation/Navigation.tsx
 >
-> # Check backend package.json
-> cat backend/package.json
+> # Check if rush hour and reviews are mounted
+> grep -n "rushHour\|rush-hour\|review\|Review" backend/src/app.ts
 >
-> # Server
-> cat backend/src/server.ts
-> cat backend/src/app.ts
+> # Check if routes are registered
+> grep -rn "rush\|review" backend/src/app.ts backend/src/server.ts
+>
+> # Check mobile env
+> cat app/.env.example 2>/dev/null || echo "MISSING"
+> grep -rn "rushHour\|rush\|review\|Review" app/src/ \
+>   --include="*.ts" --include="*.tsx"
+>
+> # Check admin env
+> cat admin/.env.example 2>/dev/null || echo "MISSING"
+>
+> # Check pickup time anywhere
+> grep -rn "pickup\|estimatedTime\|prepTime\|waitTime" \
+>   backend/src/ app/src/ admin/src/ \
+>   --include="*.ts" --include="*.tsx"
 > ```
 >
 > Say "FILES READ" then proceed.
 >
 > ---
 >
-> # FEATURE 1 — SMART PUSH NOTIFICATIONS
+> ## DIAGNOSE FIRST — Show me this report before fixing anything
 >
-> ## Backend — Push Token Storage
+> ```
+> RUSH HOUR:
+>   RushHour model exists:           YES/NO
+>   rushHours route file exists:     YES/NO
+>   Route mounted in app.ts:         YES/NO — show exact line
+>   Admin RushHoursPage exists:      YES/NO
+>   Admin route in App.tsx:          YES/NO
+>   Admin sidebar link exists:       YES/NO
+>   Mobile fetches rush hour status: YES/NO — show exact line
+>   Mobile shows rush hour banner:   YES/NO
+>   Real-time sync mechanism:        POLLING/SOCKET/NONE
 >
-> **Update `backend/src/models/User.ts`:**
+> REVIEWS:
+>   Review model exists:             YES/NO
+>   reviews route file exists:       YES/NO
+>   Route mounted in app.ts:         YES/NO — show exact line
+>   RateOrderScreen exists:          YES/NO
+>   MenuItemReviewsScreen exists:    YES/NO
+>   Both screens in Navigation.tsx:  YES/NO
+>   Menu cards show ratings:         YES/NO
+>   Admin ReviewsPage exists:        YES/NO
+>
+> PICKUP TIMES:
+>   Any pickup time field on Order:  YES/NO
+>   Admin can set pickup time:       YES/NO
+>   Mobile shows pickup time:        YES/NO
+> ```
+>
+> Show this report. Then fix everything that is NO.
+>
+> ---
+>
+> # FIX 1 — RUSH HOUR NOT SYNCING TO APP
+>
+> ## Root Cause Check
+>
+> The most likely reasons admin changes don't show in app:
+> ```bash
+> # Check 1 — Is route even mounted?
+> grep -n "rush" backend/src/app.ts
+>
+> # Check 2 — Is mobile calling correct URL?
+> grep -n "rush" app/src/api/index.ts
+>
+> # Check 3 — Is mobile using correct college param?
+> grep -n "getRushHour\|rush" app/src/screens/MenuScreen.tsx
+>
+> # Check 4 — Is there any caching blocking fresh data?
+> grep -n "cache\|Cache" backend/src/routes/rushHours.ts 2>/dev/null
+>
+> # Check 5 — Is admin panel calling correct endpoint?
+> grep -n "rush" admin/src/api/index.ts
+> grep -n "rush" admin/src/pages/RushHoursPage.tsx 2>/dev/null
+> ```
+>
+> Fix whatever is missing or wrong:
+>
+> **If route not mounted — add to `backend/src/app.ts`:**
 > ```ts
-> // Add push token field
-> expoPushToken: {
->   type: String,
->   default: null,
->   trim: true
+> import rushHoursRouter from './routes/rushHours'
+> app.use('/api/rush-hours', rushHoursRouter)
+> ```
+>
+> **If mobile not fetching — add to `app/src/api/index.ts`:**
+> ```ts
+> export const getRushHourStatus = (college: string) =>
+>   api.get(`/rush-hours?college=${college}`).then(r => r.data)
+>
+> export const getAllRushHours = (college?: string) =>
+>   api.get(`/rush-hours/all${college ? `?college=${college}` : ''}`)
+>     .then(r => r.data)
+> ```
+>
+> ## Make Rush Hour Changes Reflect Instantly
+>
+> The problem is mobile only fetches rush hour once on screen load.
+> Admin changes after that are invisible until app restart.
+>
+> **Fix — Add polling in `app/src/screens/MenuScreen.tsx`:**
+> ```ts
+> import { useEffect, useRef, useState } from 'react'
+> import { AppState } from 'react-native'
+>
+> const POLL_INTERVAL = 60 * 1000 // check every 60 seconds
+>
+> export default function MenuScreen() {
+>   const { user } = useAuthStore()
+>   const [rushHour, setRushHour] = useState(null)
+>   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+>   const appState = useRef(AppState.currentState)
+>
+>   const fetchRushHour = async () => {
+>     try {
+>       const data = await getRushHourStatus(user.college)
+>       setRushHour(data)
+>     } catch (err) {
+>       // silent fail — rush hour is non-critical
+>     }
+>   }
+>
+>   useEffect(() => {
+>     // Fetch immediately on mount
+>     fetchRushHour()
+>
+>     // Poll every 60 seconds
+>     pollRef.current = setInterval(fetchRushHour, POLL_INTERVAL)
+>
+>     // Refetch when app comes back to foreground
+>     const subscription = AppState.addEventListener('change', nextState => {
+>       if (
+>         appState.current.match(/inactive|background/) &&
+>         nextState === 'active'
+>       ) {
+>         fetchRushHour()
+>       }
+>       appState.current = nextState
+>     })
+>
+>     return () => {
+>       if (pollRef.current) clearInterval(pollRef.current)
+>       subscription.remove()
+//     }
+>   }, [user.college])
+>
+>   // ... rest of screen
 > }
 > ```
 >
-> **Create `backend/src/services/notification.service.ts`:**
+> **Also emit socket event when rush hour changes — backend:**
+>
+> In `backend/src/routes/rushHours.ts`
+> when rush hour is created, updated, or deleted:
 > ```ts
-> // Uses Expo Push Notification API — completely free
-> // No Firebase setup needed, works directly with Expo
+> import { getIO } from '../server'  // import socket instance
 >
-> interface PushMessage {
->   to: string           // Expo push token
->   title: string
->   body: string
->   data?: object        // extra data sent to app
->   sound?: 'default' | null
->   badge?: number
->   categoryId?: string  // for actionable notifications
+> // After creating/updating/deleting a rush hour
+> const io = getIO()
+> io.emit(`rush:updated:${targetCollege}`, {
+>   college: targetCollege,
+>   timestamp: new Date().toISOString()
+> })
+> ```
+>
+> **In `app/src/api/socket.ts` add listener:**
+> ```ts
+> // Listen for rush hour changes from admin
+> socket.on(`rush:updated:${user?.college}`, () => {
+>   // Trigger a fresh fetch in MenuScreen
+>   // Use a simple event emitter or zustand store flag
+>   useRushHourStore.getState().triggerRefetch()
+> })
+> ```
+>
+> **Create `app/src/stores/rushHourStore.ts`:**
+> ```ts
+> import { create } from 'zustand'
+>
+> interface RushHourStore {
+>   rushHour: any
+>   lastFetchedAt: number
+>   setRushHour: (data: any) => void
+>   shouldRefetch: boolean
+>   triggerRefetch: () => void
+>   clearRefetch: () => void
 > }
 >
-> const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
+> export const useRushHourStore = create<RushHourStore>(set => ({
+>   rushHour: null,
+>   lastFetchedAt: 0,
+>   shouldRefetch: false,
+>   setRushHour: (data) => set({
+>     rushHour: data,
+>     lastFetchedAt: Date.now()
+>   }),
+>   triggerRefetch: () => set({ shouldRefetch: true }),
+>   clearRefetch: () => set({ shouldRefetch: false })
+> }))
+> ```
 >
-> export async function sendPushNotification(
->   token: string,
->   title: string,
->   body: string,
->   data?: object
-> ): Promise<void> {
->   if (!token || !token.startsWith('ExponentPushToken')) {
->     console.warn('Invalid push token:', token)
->     return
->   }
+> **Rush Hour Banner — make it look good:**
+> ```tsx
+> {rushHour?.isRushHour && (
+>   <View style={styles.rushBanner}>
+>     <View style={styles.rushLeft}>
+>       <Text style={styles.rushDot}>🔴</Text>
+>       <View>
+>         <Text style={styles.rushTitle}>
+>           {rushHour.current.label}
+>         </Text>
+>         <Text style={styles.rushMsg}>
+>           {rushHour.current.message}
+>         </Text>
+>         <Text style={styles.rushTime}>
+>           Until {rushHour.current.endTime}
+>         </Text>
+>       </View>
+>     </View>
+>     {rushHour.current.surchargePercent > 0 && (
+>       <View style={styles.rushBadge}>
+>         <Text style={styles.rushBadgeText}>
+>           +{rushHour.current.surchargePercent}%
+>         </Text>
+>       </View>
+>     )}
+>   </View>
+> )}
 >
->   const message: PushMessage = {
->     to: token,
->     title,
->     body,
->     sound: 'default',
->     data: data ?? {}
->   }
+> // Styles
+> rushBanner: {
+>   backgroundColor: '#FFF3E0',
+>   borderLeftWidth: 4,
+>   borderLeftColor: '#FF6F00',
+>   marginHorizontal: 16,
+>   marginVertical: 8,
+>   padding: 12,
+>   borderRadius: 8,
+>   flexDirection: 'row',
+>   alignItems: 'center',
+>   justifyContent: 'space-between'
+> },
+> rushLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+> rushTitle: { fontWeight: '700', color: '#E65100', fontSize: 14 },
+> rushMsg: { color: '#BF360C', fontSize: 12, marginTop: 2 },
+> rushTime: { color: '#999', fontSize: 11, marginTop: 2 },
+> rushBadge: {
+>   backgroundColor: '#FF6F00',
+>   borderRadius: 12,
+>   paddingHorizontal: 8,
+>   paddingVertical: 4
+> },
+> rushBadgeText: { color: '#FFF', fontWeight: '700', fontSize: 12 }
+> ```
 >
->   try {
->     const response = await fetch(EXPO_PUSH_URL, {
->       method: 'POST',
->       headers: {
->         'Content-Type': 'application/json',
->         'Accept': 'application/json'
->       },
->       body: JSON.stringify(message)
+> ---
+>
+> # FIX 2 — CUSTOMISABLE PICKUP TIMES
+>
+> ## Backend — Pickup Time Settings Model
+>
+> **Create `backend/src/models/PickupSettings.ts`:**
+> ```ts
+> import mongoose, { Schema, Document } from 'mongoose'
+>
+> export interface IPickupSettings extends Document {
+>   college:            string
+>   basePickupMinutes:  number   // default wait time e.g. 15
+>   rushHourExtra:      number   // extra minutes during rush e.g. +10
+>   perItemExtra:       number   // extra per item e.g. +2 mins per item
+>   maxPickupMinutes:   number   // cap e.g. 45 mins max
+>   openingTime:        string   // "08:00"
+>   closingTime:        string   // "20:00"
+>   breakStart:         string   // "15:00" (optional break)
+>   breakEnd:           string   // "16:00"
+>   hasBreak:           boolean
+>   isOpen:             boolean  // manual override to close canteen
+>   closedMessage:      string   // "Canteen closed for cleaning"
+>   updatedBy:          mongoose.Types.ObjectId
+> }
+>
+> const PickupSettingsSchema = new Schema<IPickupSettings>({
+>   college:           { type: String, required: true, unique: true,
+>                        enum: ['DSCE','DSATM','NIE'] },
+>   basePickupMinutes: { type: Number, default: 15, min: 5, max: 120 },
+>   rushHourExtra:     { type: Number, default: 10, min: 0, max: 60 },
+>   perItemExtra:      { type: Number, default: 2, min: 0, max: 10 },
+>   maxPickupMinutes:  { type: Number, default: 45, min: 10, max: 120 },
+>   openingTime:       { type: String, default: '08:00' },
+>   closingTime:       { type: String, default: '21:00' },
+>   breakStart:        { type: String, default: '15:00' },
+>   breakEnd:          { type: String, default: '16:00' },
+>   hasBreak:          { type: Boolean, default: false },
+>   isOpen:            { type: Boolean, default: true },
+>   closedMessage:     { type: String, default: 'Canteen is currently closed' },
+>   updatedBy:         { type: Schema.Types.ObjectId, ref: 'User' }
+> }, { timestamps: true })
+>
+> export const PickupSettings = mongoose.model<IPickupSettings>(
+>   'PickupSettings', PickupSettingsSchema
+> )
+> ```
+>
+> **Create `backend/src/routes/pickupSettings.ts`:**
+> ```ts
+> // GET /api/pickup-settings/:college
+> // Public — mobile fetches this to show estimated time
+> router.get('/:college', async (req, res) => {
+>   let settings = await PickupSettings.findOne({
+>     college: req.params.college
+>   }).lean()
+>
+>   // Create defaults if none exist
+>   if (!settings) {
+>     settings = await PickupSettings.create({
+>       college: req.params.college,
+>       basePickupMinutes: 15
 >     })
->     const result = await response.json()
->     if (result.data?.status === 'error') {
->       console.error('Push notification error:', result.data.message)
->     }
->   } catch (err: any) {
->     console.error('Push notification failed:', err.message)
->   }
-> }
->
-> // Send to multiple tokens at once (batch)
-> export async function sendBulkPushNotification(
->   tokens: string[],
->   title: string,
->   body: string,
->   data?: object
-> ): Promise<void> {
->   const validTokens = tokens.filter(t =>
->     t && t.startsWith('ExponentPushToken')
->   )
->   if (validTokens.length === 0) return
->
->   // Expo supports up to 100 per batch
->   const batches = []
->   for (let i = 0; i < validTokens.length; i += 100) {
->     batches.push(validTokens.slice(i, i + 100))
 >   }
 >
->   const messages = batches.map(batch =>
->     batch.map(token => ({
->       to: token, title, body,
->       sound: 'default',
->       data: data ?? {}
->     }))
->   )
+>   // Calculate current estimated pickup time
+>   const now = new Date()
+>   const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
 >
->   await Promise.all(
->     messages.map(batch =>
->       fetch(EXPO_PUSH_URL, {
->         method: 'POST',
->         headers: { 'Content-Type': 'application/json' },
->         body: JSON.stringify(batch)
->       }).catch(err => console.error('Batch push failed:', err.message))
->     )
->   )
-> }
+>   // Check if open
+>   const isCurrentlyOpen = settings.isOpen &&
+>     currentTime >= settings.openingTime &&
+>     currentTime <= settings.closingTime &&
+>     !(settings.hasBreak &&
+>       currentTime >= settings.breakStart &&
+>       currentTime <= settings.breakEnd)
 >
-> // Pre-built notification templates
-> export const NotificationTemplates = {
->   orderPaid: (orderId: string) => ({
->     title: '✅ Payment Confirmed!',
->     body: 'Your order is being prepared. We will notify you when ready!',
->     data: { screen: 'OrderDetail', orderId, type: 'order_paid' }
->   }),
->
->   orderReady: (items: string[]) => ({
->     title: '🍱 Your Order is Ready!',
->     body: `${items.slice(0,2).join(', ')}${items.length > 2 ? ` +${items.length-2} more` : ''} — come collect!`,
->     data: { screen: 'Orders', type: 'order_ready' }
->   }),
->
->   orderFulfilled: () => ({
->     title: '🎉 Enjoy your meal!',
->     body: 'Order collected. How was it? Rate your meal!',
->     data: { screen: 'Orders', type: 'order_fulfilled', showRating: true }
->   }),
->
->   rushHourWarning: (endTime: string, college: string) => ({
->     title: '⏰ Beat the Rush!',
->     body: `${college} canteen rush hour ends at ${endTime}. Order now for faster service!`,
->     data: { screen: 'Menu', type: 'rush_warning' }
->   }),
->
->   dailySpecial: (itemName: string, price: number, college: string) => ({
->     title: `🌟 Today's Special at ${college}!`,
->     body: `${itemName} — just ₹${price}. Available while stocks last!`,
->     data: { screen: 'Menu', type: 'daily_special' }
->   }),
->
->   itemRestocked: (itemName: string) => ({
->     title: '🔔 Back in Stock!',
->     body: `${itemName} is available again. Order before it runs out!`,
->     data: { screen: 'Menu', type: 'restock' }
->   }),
->
->   orderFailed: (orderId: string) => ({
->     title: '❌ Payment Failed',
->     body: 'Your payment could not be processed. Please try again.',
->     data: { screen: 'Cart', orderId, type: 'order_failed' }
->   }),
->
->   rateReminder: (orderId: string) => ({
->     title: '⭐ How was your meal?',
->     body: 'Take 10 seconds to rate your food. Your feedback helps!',
->     data: { screen: 'RateOrder', orderId, type: 'rate_reminder' }
+>   res.json({
+>     ...settings,
+>     isCurrentlyOpen,
+>     currentTime
 >   })
-> }
-> ```
->
-> **Create `backend/src/routes/notifications.ts`:**
-> ```ts
-> // POST /api/notifications/token
-> // Student saves their Expo push token
-> router.post('/token', requireAuth, async (req, res) => {
->   const { expoPushToken } = req.body
->   if (!expoPushToken) {
->     return res.status(400).json({ error: 'Token required' })
->   }
->   if (!expoPushToken.startsWith('ExponentPushToken')) {
->     return res.status(400).json({ error: 'Invalid Expo push token' })
->   }
->   await User.findByIdAndUpdate(req.user.id, { expoPushToken })
->   res.json({ message: 'Push token saved' })
 > })
 >
-> // DELETE /api/notifications/token
-> // Clear token on logout
-> router.delete('/token', requireAuth, async (req, res) => {
->   await User.findByIdAndUpdate(req.user.id, { expoPushToken: null })
->   res.json({ message: 'Push token cleared' })
-> })
->
-> // POST /api/notifications/broadcast (admin/manager only)
-> // Send notification to all students of a college
-> router.post('/broadcast', requireAuth,
+> // PATCH /api/pickup-settings/:college (manager/admin only)
+> router.patch('/:college', requireAuth,
 >   requireRoles(['manager','admin']),
 >   async (req, res) => {
->     const { title, body, college } = req.body
->     if (!title || !body) {
->       return res.status(400).json({ error: 'Title and body required' })
+>     // Manager can only update own college
+>     if (req.user.role !== 'admin' &&
+>         req.params.college !== req.user.college) {
+>       return res.status(403).json({ error: 'Access denied' })
 >     }
 >
->     const targetCollege = req.user.role === 'admin'
->       ? college
->       : req.user.college
+>     const allowed = [
+>       'basePickupMinutes', 'rushHourExtra', 'perItemExtra',
+>       'maxPickupMinutes', 'openingTime', 'closingTime',
+>       'breakStart', 'breakEnd', 'hasBreak', 'isOpen', 'closedMessage'
+>     ]
 >
->     const users = await User.find({
->       college: targetCollege,
->       role: 'student',
->       expoPushToken: { $ne: null }
->     }).select('expoPushToken').lean()
->
->     const tokens = users
->       .map(u => u.expoPushToken)
->       .filter(Boolean) as string[]
->
->     // Fire and forget
->     sendBulkPushNotification(tokens, title, body, {
->       type: 'broadcast', college: targetCollege
->     }).catch(console.error)
->
->     res.json({
->       message: 'Broadcast sent',
->       recipients: tokens.length
+>     const update: any = {}
+>     allowed.forEach(key => {
+>       if (req.body[key] !== undefined) update[key] = req.body[key]
 >     })
->   }
-> )
+>     update.updatedBy = req.user.id
 >
-> // POST /api/notifications/daily-special (manager only)
-> // Announce a daily special item
-> router.post('/daily-special', requireAuth,
->   requireRoles(['manager','admin']),
->   async (req, res) => {
->     const { menuItemId } = req.body
->     const item = await MenuItem.findById(menuItemId).lean()
->     if (!item) return res.status(404).json({ error: 'Item not found' })
->
->     const college = req.user.role === 'admin'
->       ? item.college
->       : req.user.college
->
->     const users = await User.find({
->       college,
->       role: 'student',
->       expoPushToken: { $ne: null }
->     }).select('expoPushToken').lean()
->
->     const tokens = users
->       .map(u => u.expoPushToken)
->       .filter(Boolean) as string[]
->
->     const template = NotificationTemplates.dailySpecial(
->       item.name, item.price, college
+>     const settings = await PickupSettings.findOneAndUpdate(
+>       { college: req.params.college },
+>       { $set: update },
+>       { new: true, upsert: true }
 >     )
 >
->     sendBulkPushNotification(tokens, template.title, template.body, template.data)
->       .catch(console.error)
+>     // Emit socket so mobile updates instantly
+>     const io = getIO()
+>     io.emit(`pickup:updated:${req.params.college}`, settings)
 >
->     res.json({ message: 'Daily special announced', recipients: tokens.length })
+>     res.json(settings)
 >   }
 > )
 > ```
 >
-> **Wire notifications into existing order flow:**
->
-> In `backend/src/services/order-payment.service.ts`
-> find `finalizeOrder()` and add notifications:
+> **Calculate estimated pickup time in order creation (`orders.ts`):**
 > ```ts
-> import {
->   sendPushNotification,
->   NotificationTemplates
-> } from './notification.service'
+> // After creating order, calculate pickup time
+> const settings = await PickupSettings.findOne({
+>   college: req.user.college
+> }).lean()
 >
-> // After marking order as paid, send push notification
-> const student = await User.findById(order.student)
->   .select('expoPushToken').lean()
+> let estimatedMinutes = settings?.basePickupMinutes ?? 15
 >
-> if (student?.expoPushToken) {
->   const template = NotificationTemplates.orderPaid(order._id.toString())
->   // Fire and forget
->   sendPushNotification(
->     student.expoPushToken,
->     template.title,
->     template.body,
->     template.data
->   ).catch(console.error)
+> // Add per-item time
+> const totalItems = orderItems.reduce((sum, i) => sum + i.quantity, 0)
+> estimatedMinutes += (settings?.perItemExtra ?? 2) * totalItems
+>
+> // Add rush hour extra if active
+> if (activeRush) {
+>   estimatedMinutes += settings?.rushHourExtra ?? 10
 > }
+>
+> // Cap at max
+> estimatedMinutes = Math.min(
+>   estimatedMinutes,
+>   settings?.maxPickupMinutes ?? 45
+> )
+>
+> // Calculate pickup time
+> const pickupAt = new Date(Date.now() + estimatedMinutes * 60 * 1000)
+>
+> // Save on order
+> order.estimatedPickupMinutes = estimatedMinutes
+> order.estimatedPickupAt = pickupAt
+> await order.save()
+>
+> // Include in response
+> return res.json({
+>   order,
+>   razorpay,
+>   estimatedPickupMinutes: estimatedMinutes,
+>   estimatedPickupAt: pickupAt,
+>   rushHour: activeRush ?? null
+> })
 > ```
 >
-> In `backend/src/routes/orders.ts`
-> find where order status is updated to `ready`:
+> Add fields to Order model:
 > ```ts
-> // When admin marks order as ready
-> if (newStatus === 'ready') {
->   const student = await User.findById(order.student)
->     .select('expoPushToken').lean()
->   if (student?.expoPushToken) {
->     const itemNames = order.items.map((i: any) => i.menuItem.name)
->     const template = NotificationTemplates.orderReady(itemNames)
->     sendPushNotification(
->       student.expoPushToken,
->       template.title,
->       template.body,
->       template.data
->     ).catch(console.error)
->   }
-> }
->
-> // When order is fulfilled (QR scanned)
-> if (newStatus === 'fulfilled') {
->   const student = await User.findById(order.student)
->     .select('expoPushToken').lean()
->   if (student?.expoPushToken) {
->     const template = NotificationTemplates.orderFulfilled()
->     sendPushNotification(
->       student.expoPushToken,
->       template.title,
->       template.body,
->       { ...template.data, orderId: order._id.toString() }
->     ).catch(console.error)
->   }
->
->   // Schedule rate reminder 30 minutes after fulfillment
->   setTimeout(async () => {
->     const freshStudent = await User.findById(order.student)
->       .select('expoPushToken').lean()
->     if (freshStudent?.expoPushToken) {
->       const rateTemplate = NotificationTemplates.rateReminder(
->         order._id.toString()
->       )
->       sendPushNotification(
->         freshStudent.expoPushToken,
->         rateTemplate.title,
->         rateTemplate.body,
->         rateTemplate.data
->       ).catch(console.error)
->     }
->   }, 30 * 60 * 1000) // 30 minutes
-> }
+> estimatedPickupMinutes: { type: Number, default: 15 },
+> estimatedPickupAt:      { type: Date }
 > ```
 >
 > Mount in `app.ts`:
 > ```ts
-> import notificationsRouter from './routes/notifications'
-> app.use('/api/notifications', notificationsRouter)
+> import pickupSettingsRouter from './routes/pickupSettings'
+> app.use('/api/pickup-settings', pickupSettingsRouter)
 > ```
 >
-> ## Mobile — Push Notification Setup
+> ## Admin Panel — Pickup Settings Page
 >
-> **Install:**
-> ```bash
-> cd app && npx expo install expo-notifications expo-device
-> ```
->
-> **Create `app/src/services/notifications.ts`:**
-> ```ts
-> import * as Notifications from 'expo-notifications'
-> import * as Device from 'expo-device'
-> import { Platform } from 'react-native'
-> import { saveExpoPushToken } from '../api/index'
->
-> // Configure how notifications appear when app is foreground
-> Notifications.setNotificationHandler({
->   handleNotification: async () => ({
->     shouldShowAlert: true,
->     shouldPlaySound: true,
->     shouldSetBadge: true
->   })
-> })
->
-> export async function registerForPushNotifications(): Promise<string | null> {
->   // Must be physical device
->   if (!Device.isDevice) {
->     console.log('Push notifications require physical device')
->     return null
->   }
->
->   // Check existing permissions
->   const { status: existing } = await Notifications.getPermissionsAsync()
->   let finalStatus = existing
->
->   // Request if not granted
->   if (existing !== 'granted') {
->     const { status } = await Notifications.requestPermissionsAsync()
->     finalStatus = status
->   }
->
->   if (finalStatus !== 'granted') {
->     console.log('Push notification permission denied')
->     return null
->   }
->
->   // Android channel
->   if (Platform.OS === 'android') {
->     await Notifications.setNotificationChannelAsync('orders', {
->       name: 'Order Updates',
->       importance: Notifications.AndroidImportance.MAX,
->       vibrationPattern: [0, 250, 250, 250],
->       lightColor: '#00C853',
->       sound: 'default'
->     })
->     await Notifications.setNotificationChannelAsync('general', {
->       name: 'General',
->       importance: Notifications.AndroidImportance.DEFAULT,
->     })
->   }
->
->   // Get token
->   const token = await Notifications.getExpoPushTokenAsync({
->     projectId: process.env.EXPO_PUBLIC_PROJECT_ID
->   })
->
->   return token.data
-> }
->
-> export function setupNotificationListeners(navigation: any) {
->   // Notification received while app is open
->   const foregroundSub = Notifications.addNotificationReceivedListener(
->     notification => {
->       console.log('Notification received:', notification)
->       // Could show in-app toast here
->     }
->   )
->
->   // User tapped a notification
->   const responseSub = Notifications.addNotificationResponseReceivedListener(
->     response => {
->       const data = response.notification.request.content.data
->
->       // Navigate based on notification type
->       switch (data.screen) {
->         case 'OrderDetail':
->           navigation.navigate('OrderDetail', { orderId: data.orderId })
->           break
->         case 'Orders':
->           navigation.navigate('Orders')
->           if (data.showRating) {
->             // Will trigger rating modal in OrdersScreen
->           }
->           break
->         case 'RateOrder':
->           navigation.navigate('RateOrder', { orderId: data.orderId })
->           break
->         case 'Menu':
->           navigation.navigate('Menu')
->           break
->         case 'Cart':
->           navigation.navigate('Cart')
->           break
->       }
->     }
->   )
->
->   return () => {
->     foregroundSub.remove()
->     responseSub.remove()
->   }
-> }
-> ```
->
-> **In `app/src/App.tsx` or root navigator:**
-> ```ts
-> import {
->   registerForPushNotifications,
->   setupNotificationListeners
-> } from './services/notifications'
-> import { saveExpoPushToken } from './api/index'
->
-> // After login succeeds
-> export const onLoginSuccess = async () => {
->   const token = await registerForPushNotifications()
->   if (token) {
->     // Save to backend — fire and forget
->     saveExpoPushToken(token).catch(console.error)
->   }
-> }
->
-> // In root component
-> useEffect(() => {
->   const cleanup = setupNotificationListeners(navigation)
->   return cleanup
-> }, [navigation])
-> ```
->
-> **Add to `app/src/api/index.ts`:**
-> ```ts
-> export const saveExpoPushToken = (token: string) =>
->   api.post('/notifications/token', { expoPushToken: token })
->
-> export const clearExpoPushToken = () =>
->   api.delete('/notifications/token')
-> ```
->
-> **Clear token on logout in `authStore.ts`:**
-> ```ts
-> logout: async () => {
->   // Clear push token from backend before clearing local state
->   clearExpoPushToken().catch(console.error)
->   await AsyncStorage.removeItem('token')
->   set({ token: null, user: null })
-> }
-> ```
->
-> **Add to `app.json`:**
-> ```json
-> {
->   "expo": {
->     "plugins": [
->       [
->         "expo-notifications",
->         {
->           "icon": "./assets/notification-icon.png",
->           "color": "#00C853",
->           "sounds": [],
->           "androidMode": "default"
->         }
->       ]
->     ]
->   }
-> }
-> ```
->
-> ## Admin Panel — Broadcast Notification Page
->
-> **Create `admin/src/pages/NotificationsPage.tsx`:**
+> **Create `admin/src/pages/PickupSettingsPage.tsx`:**
 > ```tsx
 > // Layout:
 > // ┌─────────────────────────────────────────┐
-> // │  📢 Send Notification                   │
+> // │  ⏱️ Pickup Time Settings — DSCE         │
 > // ├─────────────────────────────────────────┤
-> // │  QUICK ACTIONS                          │
-> // │  ┌──────────┐ ┌──────────┐ ┌────────┐ │
-> // │  │ 🌟 Daily  │ │ ⚠️ Rush  │ │ 📣 Any │ │
-> // │  │ Special   │ │ Warning  │ │ Custom │ │
-> // │  └──────────┘ └──────────┘ └────────┘ │
+> // │  CANTEEN STATUS                         │
+> // │  🟢 Open  [Toggle Open/Closed]          │
+> // │  Closed message: [________________]     │
 > // ├─────────────────────────────────────────┤
-> // │  CUSTOM BROADCAST                       │
-> // │  College: [DSCE ▼]                      │
-> // │  Title: [____________________________]  │
-> // │  Message: [_________________________]   │
-> // │           [_________________________]   │
-> // │  Preview: 📱 [shows phone mockup]       │
-> // │  [Send to X students]                   │
+> // │  OPENING HOURS                          │
+> // │  Opens:  [08:00]    Closes: [21:00]     │
+> // │  Break:  [✓] Enable break               │
+> // │  From:   [15:00]    To:     [16:00]     │
 > // ├─────────────────────────────────────────┤
-> // │  DAILY SPECIAL                          │
-> // │  Pick item: [Masala Dosa ▼]             │
-> // │  [📢 Announce as Today's Special]       │
+> // │  PICKUP TIME SETTINGS                   │
+> // │  Base wait time:      [15] minutes      │
+> // │  Extra per item:      [2]  minutes      │
+> // │  Rush hour extra:     [10] minutes      │
+> // │  Maximum wait cap:    [45] minutes      │
+> // ├─────────────────────────────────────────┤
+> // │  PREVIEW                                │
+> // │  Normal order (3 items): ~21 min        │
+> // │  Rush hour (3 items):    ~31 min        │
+> // │  Large order (10 items): ~45 min (cap)  │
+> // ├─────────────────────────────────────────┤
+> // │  [Save Changes]                         │
 > // └─────────────────────────────────────────┘
 >
-> // Show sent notification history with timestamps
-> // Show recipient count per notification
+> // Live preview recalculates as admin changes values
+> // No save needed for preview — just reactive calculation
+> // Auto-save with debounce when values change
+> // Show "Last updated X minutes ago by Manager Name"
+>
+> const estimatePickup = (
+>   baseMinutes: number,
+>   perItem: number,
+>   rushExtra: number,
+>   maxMinutes: number,
+>   itemCount: number,
+>   isRushHour: boolean
+> ): number => {
+>   let total = baseMinutes + (perItem * itemCount)
+>   if (isRushHour) total += rushExtra
+>   return Math.min(total, maxMinutes)
+> }
 > ```
 >
-> **Add to admin API:**
+> Add to admin API:
 > ```ts
-> export const broadcastNotification = (data: {
->   title: string, body: string, college?: string
-> }) => api.post('/notifications/broadcast', data)
+> export const getPickupSettings = (college: string) =>
+>   api.get(`/pickup-settings/${college}`).then(r => r.data)
 >
-> export const announceDailySpecial = (menuItemId: string) =>
->   api.post('/notifications/daily-special', { menuItemId })
+> export const updatePickupSettings = (college: string, data: any) =>
+>   api.patch(`/pickup-settings/${college}`, data).then(r => r.data)
 > ```
 >
-> **Add route to admin `App.tsx`:**
+> Add route to `App.tsx`:
 > ```tsx
-> <Route path="/notifications" element={
+> <Route path="/pickup-settings" element={
 >   <ProtectedRoute roles={['manager','admin']}>
->     <NotificationsPage />
+>     <PickupSettingsPage />
 >   </ProtectedRoute>
 > } />
 > ```
 >
 > Add to sidebar:
 > ```tsx
-> { label: '📢 Notifications', path: '/notifications', roles: ['manager','admin'] }
+> { label: '⏱️ Pickup Times', path: '/pickup-settings',
+>   roles: ['manager','admin'] }
+> ```
+>
+> ## Mobile — Show Pickup Time + Canteen Open/Closed
+>
+> **In `app/src/screens/MenuScreen.tsx`:**
+> ```tsx
+> const [pickupSettings, setPickupSettings] = useState(null)
+>
+> useEffect(() => {
+>   // Fetch pickup settings
+>   getPickupSettings(user.college)
+>     .then(setPickupSettings)
+>     .catch(() => {})
+>
+>   // Listen for real-time updates from admin
+>   socket.on(`pickup:updated:${user.college}`, (data) => {
+>     setPickupSettings(data)
+>   })
+>
+>   return () => {
+>     socket.off(`pickup:updated:${user.college}`)
+>   }
+> }, [user.college])
+>
+> // Show canteen closed banner
+> {pickupSettings && !pickupSettings.isCurrentlyOpen && (
+>   <View style={styles.closedBanner}>
+>     <Text style={styles.closedEmoji}>🔒</Text>
+>     <View>
+>       <Text style={styles.closedTitle}>Canteen Closed</Text>
+>       <Text style={styles.closedMsg}>
+>         {pickupSettings.closedMessage}
+>       </Text>
+>       <Text style={styles.closedHours}>
+>         Opens at {pickupSettings.openingTime}
+>       </Text>
+>     </View>
+>   </View>
+> )}
+>
+> // Disable order button if closed
+> {pickupSettings && !pickupSettings.isCurrentlyOpen && (
+>   <View style={styles.orderingDisabled}>
+>     <Text>Ordering is currently unavailable</Text>
+>   </View>
+> )}
+> ```
+>
+> **In `app/src/screens/CartScreen.tsx`:**
+> Show estimated pickup time before placing order:
+> ```tsx
+> {estimatedMinutes && (
+>   <View style={styles.pickupEstimate}>
+>     <Text style={styles.pickupIcon}>🕐</Text>
+>     <View>
+>       <Text style={styles.pickupLabel}>Estimated Pickup</Text>
+>       <Text style={styles.pickupTime}>
+>         ~{estimatedMinutes} minutes
+>       </Text>
+>       {isRushHour && (
+>         <Text style={styles.pickupRushNote}>
+>           (+{rushExtra} min rush hour)
+>         </Text>
+>       )}
+>     </View>
+>   </View>
+> )}
+>
+> // Calculate estimate on cart screen too
+> // so student sees it before payment
+> const calculateEstimate = () => {
+>   if (!pickupSettings) return 15
+>   const totalItems = cartItems.reduce((s, i) => s + i.quantity, 0)
+>   let mins = pickupSettings.basePickupMinutes
+>   mins += pickupSettings.perItemExtra * totalItems
+>   if (rushHour?.isRushHour) mins += pickupSettings.rushHourExtra
+>   return Math.min(mins, pickupSettings.maxPickupMinutes)
+> }
+> ```
+>
+> **In `app/src/screens/PaymentSuccessScreen.tsx`:**
+> Show pickup time prominently:
+> ```tsx
+> // Add to order details card
+> <View style={styles.pickupTimeRow}>
+>   <Text style={styles.pickupTimeIcon}>🕐</Text>
+>   <View>
+>     <Text style={styles.pickupTimeLabel}>Ready for pickup in</Text>
+>     <Text style={styles.pickupTimeValue}>
+>       ~{order.estimatedPickupMinutes} minutes
+>     </Text>
+>     <Text style={styles.pickupTimeAt}>
+>       Around {formatTime(order.estimatedPickupAt)}
+>     </Text>
+>   </View>
+> </View>
+>
+> // Time formatter
+> const formatTime = (isoString: string) => {
+>   const date = new Date(isoString)
+>   return date.toLocaleTimeString('en-IN', {
+>     hour: '2-digit',
+>     minute: '2-digit',
+>     hour12: true
+>   })
+> }
+> ```
+>
+> Add to api:
+> ```ts
+> export const getPickupSettings = (college: string) =>
+>   api.get(`/pickup-settings/${college}`).then(r => r.data)
 > ```
 >
 > ---
 >
-> # FEATURE 2 — RATE YOUR MEAL + PUBLIC REVIEWS
+> # FIX 3 — REVIEW SYSTEM NOT IN APP
 >
-> ## Backend — Review Model
+> ## Step 1 — Check what actually exists
 >
-> **Create `backend/src/models/Review.ts`:**
-> ```ts
-> import mongoose, { Schema, Document } from 'mongoose'
+> ```bash
+> # Are review routes mounted?
+> grep -n "review" backend/src/app.ts
 >
-> export interface IReview extends Document {
->   menuItem:    mongoose.Types.ObjectId
->   order:       mongoose.Types.ObjectId
->   student:     mongoose.Types.ObjectId
->   college:     string
->   rating:      number       // 1-5
->   title:       string       // "Crispy and delicious!"
->   body:        string       // detailed review
->   tags:        string[]     // ['spicy','fresh','value-for-money']
->   images:      string[]     // future: photo reviews
->   helpful:     number       // upvotes from other students
->   isVerified:  boolean      // verified purchase (always true here)
->   isVisible:   boolean      // admin can hide inappropriate reviews
->   createdAt:   Date
-> }
+> # Do the screen files exist?
+> ls app/src/screens/ | grep -i "review\|rate\|Rate"
 >
-> const ReviewSchema = new Schema<IReview>({
->   menuItem:   { type: Schema.Types.ObjectId, ref: 'MenuItem', required: true },
->   order:      { type: Schema.Types.ObjectId, ref: 'Order', required: true },
->   student:    { type: Schema.Types.ObjectId, ref: 'User', required: true },
->   college:    { type: String, required: true },
->   rating:     { type: Number, required: true, min: 1, max: 5 },
->   title:      { type: String, trim: true, maxlength: 100, default: '' },
->   body:       { type: String, trim: true, maxlength: 500, default: '' },
->   tags:       { type: [String], default: [] },
->   helpful:    { type: Number, default: 0 },
->   isVerified: { type: Boolean, default: true },
->   isVisible:  { type: Boolean, default: true }
-> }, { timestamps: true })
+> # Are screens in navigation?
+> grep -n "Review\|Rate" app/src/navigation/Navigation.tsx
 >
-> // One review per student per order item
-> ReviewSchema.index(
->   { order: 1, menuItem: 1, student: 1 },
->   { unique: true }
-> )
->
-> // For fetching reviews of a menu item
-> ReviewSchema.index({ menuItem: 1, isVisible: 1, createdAt: -1 })
->
-> export const Review = mongoose.model<IReview>('Review', ReviewSchema)
+> # Is menu showing ratings?
+> grep -n "averageRating\|totalReviews\|rating" \
+>   app/src/screens/MenuScreen.tsx
 > ```
 >
-> **Update `backend/src/models/MenuItem.ts`:**
-> ```ts
-> // Add rating summary — updated whenever a review is added
-> averageRating: { type: Number, default: 0, min: 0, max: 5 },
-> totalReviews:  { type: Number, default: 0 },
-> ratingBreakdown: {
->   1: { type: Number, default: 0 },
->   2: { type: Number, default: 0 },
->   3: { type: Number, default: 0 },
->   4: { type: Number, default: 0 },
->   5: { type: Number, default: 0 }
-> }
-> ```
+> ## Step 2 — Mount reviews route if missing
 >
-> **Create `backend/src/routes/reviews.ts`:**
-> ```ts
-> // GET /api/reviews/menu/:menuItemId
-> // Public — anyone can see reviews for a menu item
-> router.get('/menu/:menuItemId', async (req, res) => {
->   const { page = 1, limit = 10, sort = 'recent' } = req.query
->
->   const sortOptions: any = {
->     recent:  { createdAt: -1 },
->     helpful: { helpful: -1 },
->     highest: { rating: -1 },
->     lowest:  { rating: 1 }
->   }
->
->   const reviews = await Review.find({
->     menuItem: req.params.menuItemId,
->     isVisible: true
->   })
->   .populate('student', 'name college')
->   .sort(sortOptions[sort as string] ?? sortOptions.recent)
->   .skip((Number(page) - 1) * Number(limit))
->   .limit(Number(limit))
->   .lean()
->
->   const total = await Review.countDocuments({
->     menuItem: req.params.menuItemId,
->     isVisible: true
->   })
->
->   const menuItem = await MenuItem.findById(req.params.menuItemId)
->     .select('averageRating totalReviews ratingBreakdown name')
->     .lean()
->
->   return res.json({
->     menuItem,
->     reviews,
->     pagination: {
->       page: Number(page),
->       limit: Number(limit),
->       total,
->       pages: Math.ceil(total / Number(limit))
->     }
->   })
-> })
->
-> // POST /api/reviews
-> // Student submits a review — must have a fulfilled order for this item
-> router.post('/', requireAuth, async (req, res) => {
->   const { menuItemId, orderId, rating, title, body, tags } = req.body
->
->   // Validate rating
->   if (!rating || rating < 1 || rating > 5) {
->     return res.status(400).json({ error: 'Rating must be 1-5' })
->   }
->
->   // Verify the student actually ordered and received this item
->   const order = await Order.findOne({
->     _id: orderId,
->     student: req.user.id,
->     status: 'fulfilled',  // must be fulfilled — verified purchase
->     'items.menuItem': menuItemId
->   }).lean()
->
->   if (!order) {
->     return res.status(403).json({
->       error: 'You can only review items from completed orders'
->     })
->   }
->
->   // Check not already reviewed this item from this order
->   const existing = await Review.findOne({
->     order: orderId,
->     menuItem: menuItemId,
->     student: req.user.id
->   })
->   if (existing) {
->     return res.status(409).json({ error: 'Already reviewed this item' })
->   }
->
->   // Create review
->   const review = await Review.create({
->     menuItem: menuItemId,
->     order: orderId,
->     student: req.user.id,
->     college: req.user.college,
->     rating,
->     title: title?.slice(0, 100) ?? '',
->     body: body?.slice(0, 500) ?? '',
->     tags: (tags ?? []).slice(0, 5),
->     isVerified: true,
->     isVisible: true
->   })
->
->   // Update menu item average rating
->   await updateMenuItemRating(menuItemId)
->
->   // Populate student name for response
->   await review.populate('student', 'name college')
->
->   return res.status(201).json(review)
-> })
->
-> // POST /api/reviews/:id/helpful
-> // Any authenticated user can mark review as helpful
-> router.post('/:id/helpful', requireAuth, async (req, res) => {
->   const review = await Review.findByIdAndUpdate(
->     req.params.id,
->     { $inc: { helpful: 1 } },
->     { new: true }
->   )
->   if (!review) return res.status(404).json({ error: 'Review not found' })
->   res.json({ helpful: review.helpful })
-> })
->
-> // PATCH /api/reviews/:id/visibility (admin only — hide inappropriate)
-> router.patch('/:id/visibility', requireAuth,
->   requireRoles(['manager','admin']),
->   async (req, res) => {
->     const { isVisible } = req.body
->     const review = await Review.findByIdAndUpdate(
->       req.params.id,
->       { isVisible },
->       { new: true }
->     )
->     if (!review) return res.status(404).json({ error: 'Review not found' })
->
->     // Update menu item rating after hiding/showing
->     await updateMenuItemRating(review.menuItem.toString())
->     res.json(review)
->   }
-> )
->
-> // GET /api/reviews/pending
-> // Get orders the student can still review
-> router.get('/pending', requireAuth, async (req, res) => {
->   // Find fulfilled orders in last 7 days
->   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
->   const orders = await Order.find({
->     student: req.user.id,
->     status: 'fulfilled',
->     createdAt: { $gte: sevenDaysAgo }
->   }).populate('items.menuItem', 'name image').lean()
->
->   // Find already reviewed
->   const reviews = await Review.find({
->     student: req.user.id,
->     order: { $in: orders.map(o => o._id) }
->   }).select('order menuItem').lean()
->
->   const reviewedSet = new Set(
->     reviews.map(r => `${r.order}-${r.menuItem}`)
->   )
->
->   // Return unreviewed items only
->   const pending = orders.flatMap(order =>
->     order.items
->       .filter((item: any) =>
->         !reviewedSet.has(`${order._id}-${item.menuItem._id}`)
->       )
->       .map((item: any) => ({
->         orderId: order._id,
->         menuItem: item.menuItem,
->         orderDate: order.createdAt
->       }))
->   )
->
->   res.json(pending)
-> })
->
-> // Helper — recalculate and update menu item rating stats
-> async function updateMenuItemRating(menuItemId: string) {
->   const stats = await Review.aggregate([
->     {
->       $match: {
->         menuItem: new mongoose.Types.ObjectId(menuItemId),
->         isVisible: true
->       }
->     },
->     {
->       $group: {
->         _id: null,
->         averageRating: { $avg: '$rating' },
->         totalReviews: { $sum: 1 },
->         r1: { $sum: { $cond: [{ $eq: ['$rating', 1] }, 1, 0] } },
->         r2: { $sum: { $cond: [{ $eq: ['$rating', 2] }, 1, 0] } },
->         r3: { $sum: { $cond: [{ $eq: ['$rating', 3] }, 1, 0] } },
->         r4: { $sum: { $cond: [{ $eq: ['$rating', 4] }, 1, 0] } },
->         r5: { $sum: { $cond: [{ $eq: ['$rating', 5] }, 1, 0] } }
->       }
->     }
->   ])
->
->   const s = stats[0] ?? {
->     averageRating: 0, totalReviews: 0,
->     r1: 0, r2: 0, r3: 0, r4: 0, r5: 0
->   }
->
->   await MenuItem.findByIdAndUpdate(menuItemId, {
->     averageRating: Math.round(s.averageRating * 10) / 10,
->     totalReviews: s.totalReviews,
->     'ratingBreakdown.1': s.r1,
->     'ratingBreakdown.2': s.r2,
->     'ratingBreakdown.3': s.r3,
->     'ratingBreakdown.4': s.r4,
->     'ratingBreakdown.5': s.r5
->   })
-> }
-> ```
->
-> Mount in `app.ts`:
+> In `backend/src/app.ts`:
 > ```ts
 > import reviewsRouter from './routes/reviews'
 > app.use('/api/reviews', reviewsRouter)
 > ```
 >
-> ## Mobile — Rating Flow
+> ## Step 3 — Create RateOrderScreen if missing
 >
-> **Create `app/src/screens/RateOrderScreen.tsx`:**
+> **`app/src/screens/RateOrderScreen.tsx`:**
 > ```tsx
-> // Shown after order fulfilled OR from notification tap
-> // One screen covers all unreviewed items from an order
+> import React, { useState, useEffect } from 'react'
+> import {
+>   View, Text, StyleSheet, TouchableOpacity,
+>   TextInput, ScrollView, Alert, ActivityIndicator
+> } from 'react-native'
+> import Animated, {
+>   useSharedValue, useAnimatedStyle,
+>   withSpring, withSequence, withTiming
+> } from 'react-native-reanimated'
+> import { getPendingReviews, submitReview } from '../api/index'
 >
-> // Layout — card per item with:
-> // ┌─────────────────────────────────────┐
-> // │  🍱 Masala Dosa                     │
-> // │  How would you rate this?           │
-> // │                                     │
-> // │  ☆ ☆ ☆ ☆ ☆  ← tap to rate         │
-> // │  (stars animate when tapped)        │
-> // │                                     │
-> // │  Quick tags (tap to select):        │
-> // │  [🌶️ Spicy] [🥗 Fresh] [💰 Value]  │
-> // │  [😋 Delicious] [👨‍🍳 Well made]     │
-> // │  [🐌 Slow service] [🥶 Lukewarm]   │
-> // │                                     │
-> // │  Add a review (optional):           │
-> // │  Title: [_______________________]   │
-> // │  [Write your review here...    ]    │
-> // │                                     │
-> // │  [Skip]          [Submit ⭐]        │
-> // └─────────────────────────────────────┘
+> const TAGS = [
+>   '😋 Delicious', '🌶️ Perfectly spicy', '🥗 Fresh',
+>   '💰 Value for money', '👨‍🍳 Well prepared', '⚡ Served fast',
+>   '🍽️ Great portion', '😐 Average', '🥶 Not hot enough',
+>   '🐌 Took too long', '💸 Overpriced', '🧂 Too salty'
+> ]
 >
-> const RATING_TAGS = {
->   positive: [
->     '😋 Delicious', '🌶️ Perfectly spicy', '🥗 Fresh',
->     '💰 Value for money', '👨‍🍳 Well prepared',
->     '⚡ Served fast', '🍽️ Great portion'
->   ],
->   negative: [
->     '😐 Average', '🥶 Not hot enough', '🐌 Took long',
->     '💸 Overpriced', '🧂 Too salty', '🫙 Too oily'
->   ]
+> const RATING_LABELS: Record<number, string> = {
+>   1: '😞 Poor', 2: '😕 Below average',
+>   3: '😐 Okay', 4: '😊 Good', 5: '🤩 Excellent!'
 > }
 >
-> // Star rating component
-> const StarRating = ({ rating, onRate, size = 40 }) => (
->   <View style={{ flexDirection: 'row', gap: 8 }}>
->     {[1, 2, 3, 4, 5].map(star => (
->       <TouchableOpacity key={star} onPress={() => onRate(star)}>
->         <Animated.Text style={{
->           fontSize: size,
->           // Animate scale when tapped
->         }}>
->           {star <= rating ? '⭐' : '☆'}
->         </Animated.Text>
->       </TouchableOpacity>
->     ))}
->   </View>
-> )
+> // Animated star component
+> const Star = ({ filled, onPress, index }: {
+>   filled: boolean, onPress: () => void, index: number
+> }) => {
+>   const scale = useSharedValue(1)
 >
-> // Show rating label based on stars
-> const ratingLabels = {
->   1: "😞 Poor",
->   2: "😕 Below average",
->   3: "😐 Okay",
->   4: "😊 Good",
->   5: "🤩 Excellent!"
-> }
-> ```
+>   const handlePress = () => {
+>     scale.value = withSequence(
+>       withSpring(1.4),
+>       withSpring(1)
+>     )
+>     onPress()
+>   }
 >
-> **Create `app/src/screens/MenuItemReviewsScreen.tsx`:**
-> ```tsx
-> // Public reviews page — Amazon style
-> // Shown when student taps on a menu item
+>   const style = useAnimatedStyle(() => ({
+>     transform: [{ scale: scale.value }]
+>   }))
 >
-> // Layout:
-> // ┌─────────────────────────────────────┐
-> // │  🍱 Masala Dosa                     │
-> // │  ⭐⭐⭐⭐☆  4.2  (127 reviews)       │
-> // │                                     │
-> // │  RATING BREAKDOWN                   │
-> // │  5★ ████████████████░░░  68%       │
-> // │  4★ ████████░░░░░░░░░░  22%        │
-> // │  3★ ██░░░░░░░░░░░░░░░░   6%        │
-> // │  2★ █░░░░░░░░░░░░░░░░░   3%        │
-> // │  1★ ░░░░░░░░░░░░░░░░░░   1%        │
-> // │                                     │
-> // │  Sort by: [Most Recent ▼]           │
-> // │                                     │
-> // │  ┌──────────────────────────────┐   │
-> // │  │ Rahul K. • DSCE • ⭐⭐⭐⭐⭐  │   │
-> // │  │ ✅ Verified Purchase         │   │
-> // │  │ "Best masala dosa in campus" │   │
-> // │  │ Crispy, well-spiced, value   │   │
-> // │  │ [🌶️ Spicy] [💰 Value]       │   │
-> // │  │ 12 people found this helpful │   │
-> // │  │ [👍 Helpful]    3 days ago  │   │
-> // │  └──────────────────────────────┘   │
-> // │                                     │
-> // │  [Load more reviews]                │
-> // └─────────────────────────────────────┘
->
-> // Rating bar component
-> const RatingBar = ({ star, count, total }) => {
->   const percent = total > 0 ? (count / total) * 100 : 0
 >   return (
->     <View style={styles.ratingBarRow}>
->       <Text style={styles.starLabel}>{star}★</Text>
->       <View style={styles.barBackground}>
->         <View style={[styles.barFill, {
->           width: `${percent}%`,
->           backgroundColor: percent > 50 ? '#00C853' : '#FFC107'
->         }]} />
->       </View>
->       <Text style={styles.percent}>{Math.round(percent)}%</Text>
->     </View>
+>     <TouchableOpacity onPress={handlePress}>
+>       <Animated.Text style={[{ fontSize: 44 }, style]}>
+>         {filled ? '⭐' : '☆'}
+>       </Animated.Text>
+>     </TouchableOpacity>
 >   )
 > }
 >
-> // Review card component
-> const ReviewCard = ({ review, onHelpful }) => (
->   <View style={styles.reviewCard}>
->     {/* Header */}
->     <View style={styles.reviewHeader}>
+> export default function RateOrderScreen({ route, navigation }: any) {
+>   const { orderId } = route.params
+>   const [pending, setPending] = useState<any[]>([])
+>   const [currentIndex, setCurrentIndex] = useState(0)
+>   const [rating, setRating] = useState(0)
+>   const [title, setTitle] = useState('')
+>   const [body, setBody] = useState('')
+>   const [selectedTags, setSelectedTags] = useState<string[]>([])
+>   const [submitting, setSubmitting] = useState(false)
+>   const [loading, setLoading] = useState(true)
+>
+>   useEffect(() => {
+>     getPendingReviews()
+>       .then(data => {
+>         // Filter to this order if orderId provided
+>         const filtered = orderId
+>           ? data.filter((p: any) => p.orderId === orderId)
+>           : data
+>         setPending(filtered)
+>       })
+>       .finally(() => setLoading(false))
+>   }, [])
+>
+>   const currentItem = pending[currentIndex]
+>
+>   const toggleTag = (tag: string) => {
+>     setSelectedTags(prev =>
+>       prev.includes(tag)
+>         ? prev.filter(t => t !== tag)
+>         : prev.length < 5 ? [...prev, tag] : prev
+>     )
+>   }
+>
+>   const handleSubmit = async () => {
+>     if (rating === 0) {
+>       Alert.alert('Rate it!', 'Please select a star rating')
+>       return
+>     }
+>     setSubmitting(true)
+>     try {
+>       await submitReview({
+>         menuItemId: currentItem.menuItem._id,
+>         orderId: currentItem.orderId,
+>         rating,
+>         title,
+>         body,
+>         tags: selectedTags
+>       })
+>
+>       // Move to next item or finish
+>       if (currentIndex < pending.length - 1) {
+>         setCurrentIndex(i => i + 1)
+>         setRating(0)
+>         setTitle('')
+>         setBody('')
+>         setSelectedTags([])
+>       } else {
+>         Alert.alert(
+>           '🎉 Thanks for your feedback!',
+>           'Your reviews help everyone order better.',
+>           [{ text: 'Done', onPress: () => navigation.goBack() }]
+>         )
+>       }
+>     } catch (err: any) {
+>       Alert.alert('Error', err.message ?? 'Failed to submit review')
+>     } finally {
+>       setSubmitting(false)
+>     }
+>   }
+>
+>   const handleSkip = () => {
+>     if (currentIndex < pending.length - 1) {
+>       setCurrentIndex(i => i + 1)
+>       setRating(0)
+>       setTitle('')
+>       setBody('')
+>       setSelectedTags([])
+>     } else {
+>       navigation.goBack()
+>     }
+>   }
+>
+>   if (loading) return <ActivityIndicator style={{ flex: 1 }} />
+>
+>   if (pending.length === 0) {
+>     return (
+>       <View style={styles.empty}>
+>         <Text style={styles.emptyIcon}>✅</Text>
+>         <Text style={styles.emptyTitle}>All caught up!</Text>
+>         <Text style={styles.emptyMsg}>No pending reviews</Text>
+>         <TouchableOpacity onPress={() => navigation.goBack()}>
+>           <Text style={styles.backBtn}>Go back</Text>
+>         </TouchableOpacity>
+>       </View>
+>     )
+>   }
+>
+>   return (
+>     <ScrollView style={styles.container}
+>       contentContainerStyle={styles.content}>
+>
+>       {/* Progress */}
+>       <Text style={styles.progress}>
+>         {currentIndex + 1} of {pending.length}
+>       </Text>
+>
+>       {/* Item name */}
+>       <Text style={styles.itemName}>
+>         {currentItem?.menuItem?.name}
+>       </Text>
+>       <Text style={styles.question}>How was it?</Text>
+>
+>       {/* Stars */}
+>       <View style={styles.starsRow}>
+>         {[1,2,3,4,5].map(star => (
+>           <Star
+>             key={star}
+>             index={star}
+>             filled={star <= rating}
+>             onPress={() => setRating(star)}
+>           />
+>         ))}
+>       </View>
+>       {rating > 0 && (
+>         <Text style={styles.ratingLabel}>{RATING_LABELS[rating]}</Text>
+>       )}
+>
+>       {/* Tags */}
+>       <Text style={styles.sectionLabel}>Quick tags (pick up to 5)</Text>
+>       <View style={styles.tagsContainer}>
+>         {TAGS.map(tag => (
+>           <TouchableOpacity
+>             key={tag}
+>             style={[
+>               styles.tag,
+>               selectedTags.includes(tag) && styles.tagSelected
+>             ]}
+>             onPress={() => toggleTag(tag)}
+>           >
+>             <Text style={[
+>               styles.tagText,
+>               selectedTags.includes(tag) && styles.tagTextSelected
+>             ]}>
+>               {tag}
+>             </Text>
+>           </TouchableOpacity>
+>         ))}
+>       </View>
+>
+>       {/* Written review */}
+>       <Text style={styles.sectionLabel}>Write a review (optional)</Text>
+>       <TextInput
+>         style={styles.titleInput}
+>         placeholder="Give it a title..."
+>         value={title}
+>         onChangeText={setTitle}
+>         maxLength={100}
+>       />
+>       <TextInput
+>         style={styles.bodyInput}
+>         placeholder="Tell others what you thought..."
+>         value={body}
+>         onChangeText={setBody}
+>         maxLength={500}
+>         multiline
+>         numberOfLines={4}
+>         textAlignVertical="top"
+>       />
+>       <Text style={styles.charCount}>{body.length}/500</Text>
+>
+>       {/* Buttons */}
+>       <View style={styles.buttonsRow}>
+>         <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
+>           <Text style={styles.skipText}>Skip</Text>
+>         </TouchableOpacity>
+>         <TouchableOpacity
+>           style={[styles.submitBtn,
+>             rating === 0 && styles.submitBtnDisabled]}
+>           onPress={handleSubmit}
+>           disabled={submitting || rating === 0}
+>         >
+>           <Text style={styles.submitText}>
+>             {submitting ? 'Submitting...' : `Submit ⭐`}
+>           </Text>
+>         </TouchableOpacity>
+>       </View>
+>     </ScrollView>
+>   )
+> }
+>
+> const styles = StyleSheet.create({
+>   container: { flex: 1, backgroundColor: '#fff' },
+>   content: { padding: 24 },
+>   progress: { color: '#999', fontSize: 13, textAlign: 'center' },
+>   itemName: { fontSize: 24, fontWeight: '800', textAlign: 'center',
+>     marginTop: 8, color: '#1A1A1A' },
+>   question: { fontSize: 16, color: '#666', textAlign: 'center',
+>     marginTop: 4, marginBottom: 20 },
+>   starsRow: { flexDirection: 'row', justifyContent: 'center',
+>     gap: 8, marginBottom: 8 },
+>   ratingLabel: { textAlign: 'center', fontSize: 16,
+>     fontWeight: '600', color: '#00C853', marginBottom: 24 },
+>   sectionLabel: { fontSize: 14, fontWeight: '700',
+>     color: '#333', marginBottom: 12, marginTop: 20 },
+>   tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+>   tag: { paddingHorizontal: 12, paddingVertical: 8,
+>     borderRadius: 20, borderWidth: 1.5,
+>     borderColor: '#E0E0E0', backgroundColor: '#F8F8F8' },
+>   tagSelected: { borderColor: '#00C853', backgroundColor: '#E8F5E9' },
+>   tagText: { fontSize: 13, color: '#555' },
+>   tagTextSelected: { color: '#00C853', fontWeight: '600' },
+>   titleInput: { borderWidth: 1.5, borderColor: '#E0E0E0',
+>     borderRadius: 10, padding: 12, fontSize: 15,
+>     marginBottom: 10 },
+>   bodyInput: { borderWidth: 1.5, borderColor: '#E0E0E0',
+>     borderRadius: 10, padding: 12, fontSize: 14,
+>     minHeight: 100 },
+>   charCount: { color: '#999', fontSize: 12,
+>     textAlign: 'right', marginTop: 4 },
+>   buttonsRow: { flexDirection: 'row', gap: 12,
+>     marginTop: 32, marginBottom: 40 },
+>   skipBtn: { flex: 1, padding: 16, borderRadius: 12,
+>     borderWidth: 1.5, borderColor: '#E0E0E0',
+>     alignItems: 'center' },
+>   skipText: { color: '#666', fontWeight: '600' },
+>   submitBtn: { flex: 2, padding: 16, borderRadius: 12,
+>     backgroundColor: '#00C853', alignItems: 'center' },
+>   submitBtnDisabled: { backgroundColor: '#C8E6C9' },
+>   submitText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+>   empty: { flex: 1, alignItems: 'center',
+>     justifyContent: 'center', gap: 12 },
+>   emptyIcon: { fontSize: 64 },
+>   emptyTitle: { fontSize: 22, fontWeight: '700' },
+>   emptyMsg: { color: '#666' },
+>   backBtn: { color: '#00C853', fontWeight: '600', marginTop: 8 }
+> })
+> ```
+>
+> ## Step 4 — Create MenuItemReviewsScreen if missing
+>
+> **`app/src/screens/MenuItemReviewsScreen.tsx`:**
+> ```tsx
+> import React, { useState, useEffect, useCallback } from 'react'
+> import {
+>   View, Text, StyleSheet, FlatList,
+>   TouchableOpacity, ActivityIndicator
+> } from 'react-native'
+> import { getItemReviews, markReviewHelpful } from '../api/index'
+>
+> // Rating breakdown bar
+> const RatingBar = ({ star, count, total }: {
+>   star: number, count: number, total: number
+> }) => {
+>   const percent = total > 0 ? (count / total) * 100 : 0
+>   return (
+>     <TouchableOpacity
+>       style={styles.barRow}
+>       onPress={() => {/* filter by this star */}}
+>     >
+>       <Text style={styles.barStar}>{star}★</Text>
+>       <View style={styles.barBg}>
+>         <View style={[styles.barFill, {
+>           width: `${percent}%`,
+>           backgroundColor: percent >= 50 ? '#00C853'
+>             : percent >= 25 ? '#FFC107' : '#FF5252'
+>         }]} />
+>       </View>
+>       <Text style={styles.barPercent}>{Math.round(percent)}%</Text>
+>     </TouchableOpacity>
+>   )
+> }
+>
+> // Single review card
+> const ReviewCard = ({ review, onHelpful }: any) => (
+>   <View style={styles.card}>
+>     <View style={styles.cardHeader}>
 >       <View style={styles.avatar}>
 >         <Text style={styles.avatarText}>
->           {review.student.name[0].toUpperCase()}
+>           {review.student?.name?.[0]?.toUpperCase() ?? '?'}
 >         </Text>
 >       </View>
->       <View>
->         <Text style={styles.reviewerName}>{review.student.name}</Text>
->         <Text style={styles.reviewerCollege}>{review.student.college}</Text>
+>       <View style={{ flex: 1 }}>
+>         <Text style={styles.reviewerName}>
+>           {review.student?.name ?? 'Anonymous'}
+>         </Text>
+>         <Text style={styles.reviewerCollege}>
+>           {review.student?.college}
+>         </Text>
 >       </View>
->       <View style={styles.starRow}>
+>       <Text style={styles.stars}>
 >         {'⭐'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
->       </View>
+>       </Text>
 >     </View>
 >
->     {/* Verified badge */}
->     <Text style={styles.verifiedBadge}>✅ Verified Purchase</Text>
+>     <View style={styles.verifiedRow}>
+>       <Text style={styles.verifiedBadge}>✅ Verified Purchase</Text>
+>       <Text style={styles.reviewDate}>
+>         {formatTimeAgo(review.createdAt)}
+>       </Text>
+>     </View>
 >
->     {/* Review content */}
 >     {review.title ? (
 >       <Text style={styles.reviewTitle}>{review.title}</Text>
 >     ) : null}
@@ -1041,10 +1052,9 @@ Copy into a fresh conversation:
 >       <Text style={styles.reviewBody}>{review.body}</Text>
 >     ) : null}
 >
->     {/* Tags */}
->     {review.tags.length > 0 && (
+>     {review.tags?.length > 0 && (
 >       <View style={styles.tagsRow}>
->         {review.tags.map(tag => (
+>         {review.tags.map((tag: string) => (
 >           <View key={tag} style={styles.tag}>
 >             <Text style={styles.tagText}>{tag}</Text>
 >           </View>
@@ -1052,164 +1062,335 @@ Copy into a fresh conversation:
 >       </View>
 >     )}
 >
->     {/* Helpful */}
 >     <View style={styles.helpfulRow}>
->       <Text style={styles.helpfulCount}>
->         {review.helpful > 0
->           ? `${review.helpful} ${review.helpful === 1 ? 'person' : 'people'} found this helpful`
->           : ''}
->       </Text>
+>       {review.helpful > 0 && (
+>         <Text style={styles.helpfulCount}>
+>           {review.helpful} found this helpful
+>         </Text>
+>       )}
 >       <TouchableOpacity
 >         style={styles.helpfulBtn}
 >         onPress={() => onHelpful(review._id)}
 >       >
->         <Text style={styles.helpfulBtnText}>👍 Helpful</Text>
+>         <Text style={styles.helpfulText}>👍 Helpful</Text>
 >       </TouchableOpacity>
->       <Text style={styles.reviewDate}>
->         {formatTimeAgo(review.createdAt)}
->       </Text>
 >     </View>
 >   </View>
 > )
+>
+> const SORT_OPTIONS = [
+>   { label: 'Most Recent', value: 'recent' },
+>   { label: 'Most Helpful', value: 'helpful' },
+>   { label: 'Highest Rated', value: 'highest' },
+>   { label: 'Lowest Rated', value: 'lowest' }
+> ]
+>
+> export default function MenuItemReviewsScreen({ route }: any) {
+>   const { menuItemId, menuItemName } = route.params
+>   const [data, setData] = useState<any>(null)
+>   const [page, setPage] = useState(1)
+>   const [sort, setSort] = useState('recent')
+>   const [loading, setLoading] = useState(true)
+>   const [loadingMore, setLoadingMore] = useState(false)
+>
+>   const fetchReviews = useCallback(async (p = 1, s = sort) => {
+>     if (p === 1) setLoading(true)
+>     else setLoadingMore(true)
+>     try {
+>       const result = await getItemReviews(menuItemId, p, s)
+>       if (p === 1) {
+>         setData(result)
+>       } else {
+>         setData((prev: any) => ({
+>           ...result,
+>           reviews: [...prev.reviews, ...result.reviews]
+>         }))
+>       }
+>       setPage(p)
+>     } finally {
+>       setLoading(false)
+>       setLoadingMore(false)
+>     }
+>   }, [menuItemId, sort])
+>
+>   useEffect(() => { fetchReviews(1) }, [sort])
+>
+>   const handleHelpful = async (reviewId: string) => {
+>     await markReviewHelpful(reviewId)
+>     setData((prev: any) => ({
+>       ...prev,
+>       reviews: prev.reviews.map((r: any) =>
+>         r._id === reviewId
+>           ? { ...r, helpful: r.helpful + 1 }
+>           : r
+>       )
+>     }))
+>   }
+>
+>   if (loading) return <ActivityIndicator style={{ flex: 1 }} />
+>
+>   const { menuItem, reviews, pagination } = data ?? {}
+>   const breakdown = menuItem?.ratingBreakdown ?? {}
+>   const total = menuItem?.totalReviews ?? 0
+>
+>   return (
+>     <FlatList
+>       style={styles.container}
+>       data={reviews}
+>       keyExtractor={r => r._id}
+>       renderItem={({ item }) => (
+>         <ReviewCard review={item} onHelpful={handleHelpful} />
+>       )}
+>       ListHeaderComponent={() => (
+>         <View style={styles.header}>
+>           <Text style={styles.itemName}>{menuItemName}</Text>
+>
+>           {/* Overall rating */}
+>           <View style={styles.overallRow}>
+>             <Text style={styles.bigRating}>
+>               {menuItem?.averageRating?.toFixed(1) ?? '—'}
+>             </Text>
+>             <View>
+>               <Text style={styles.bigStars}>
+>                 {'⭐'.repeat(Math.round(menuItem?.averageRating ?? 0))}
+>               </Text>
+>               <Text style={styles.totalReviews}>
+>                 {total} review{total !== 1 ? 's' : ''}
+>               </Text>
+>             </View>
+>           </View>
+>
+>           {/* Rating breakdown bars */}
+>           <View style={styles.breakdownContainer}>
+>             {[5,4,3,2,1].map(star => (
+>               <RatingBar
+>                 key={star}
+>                 star={star}
+>                 count={breakdown[star] ?? 0}
+>                 total={total}
+>               />
+>             ))}
+>           </View>
+>
+>           {/* Sort options */}
+>           <ScrollView horizontal showsHorizontalScrollIndicator={false}
+>             style={styles.sortRow}>
+>             {SORT_OPTIONS.map(opt => (
+>               <TouchableOpacity
+>                 key={opt.value}
+>                 style={[styles.sortBtn,
+>                   sort === opt.value && styles.sortBtnActive]}
+>                 onPress={() => setSort(opt.value)}
+>               >
+>                 <Text style={[styles.sortText,
+>                   sort === opt.value && styles.sortTextActive]}>
+>                   {opt.label}
+>                 </Text>
+>               </TouchableOpacity>
+>             ))}
+>           </ScrollView>
+>
+>           {total === 0 && (
+>             <View style={styles.noReviews}>
+>               <Text style={styles.noReviewsIcon}>🍽️</Text>
+>               <Text style={styles.noReviewsText}>
+>                 No reviews yet. Be the first!
+>               </Text>
+>             </View>
+>           )}
+>         </View>
+>       )}
+>       ListFooterComponent={() => (
+>         pagination && page < pagination.pages ? (
+>           <TouchableOpacity
+>             style={styles.loadMore}
+>             onPress={() => fetchReviews(page + 1)}
+>             disabled={loadingMore}
+>           >
+>             <Text style={styles.loadMoreText}>
+>               {loadingMore ? 'Loading...' : 'Load more reviews'}
+>             </Text>
+>           </TouchableOpacity>
+>         ) : null
+>       )}
+>     />
+>   )
+> }
+>
+> const formatTimeAgo = (iso: string) => {
+>   const diff = Date.now() - new Date(iso).getTime()
+>   const mins = Math.floor(diff / 60000)
+>   if (mins < 60) return `${mins}m ago`
+>   const hrs = Math.floor(mins / 60)
+>   if (hrs < 24) return `${hrs}h ago`
+>   const days = Math.floor(hrs / 24)
+>   return `${days}d ago`
+> }
+>
+> const styles = StyleSheet.create({
+>   container: { flex: 1, backgroundColor: '#fff' },
+>   header: { padding: 20 },
+>   itemName: { fontSize: 22, fontWeight: '800', color: '#1A1A1A' },
+>   overallRow: { flexDirection: 'row', alignItems: 'center',
+>     gap: 16, marginVertical: 16 },
+>   bigRating: { fontSize: 56, fontWeight: '800', color: '#1A1A1A' },
+>   bigStars: { fontSize: 20 },
+>   totalReviews: { color: '#666', marginTop: 4 },
+>   breakdownContainer: { gap: 6, marginBottom: 20 },
+>   barRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+>   barStar: { width: 24, color: '#666', fontSize: 13 },
+>   barBg: { flex: 1, height: 8, backgroundColor: '#F0F0F0',
+>     borderRadius: 4, overflow: 'hidden' },
+>   barFill: { height: '100%', borderRadius: 4 },
+>   barPercent: { width: 36, color: '#666',
+>     fontSize: 12, textAlign: 'right' },
+>   sortRow: { marginBottom: 16 },
+>   sortBtn: { paddingHorizontal: 16, paddingVertical: 8,
+>     borderRadius: 20, borderWidth: 1.5,
+>     borderColor: '#E0E0E0', marginRight: 8 },
+>   sortBtnActive: { borderColor: '#00C853',
+>     backgroundColor: '#E8F5E9' },
+>   sortText: { color: '#666', fontSize: 13 },
+>   sortTextActive: { color: '#00C853', fontWeight: '700' },
+>   noReviews: { alignItems: 'center', padding: 40 },
+>   noReviewsIcon: { fontSize: 48, marginBottom: 12 },
+>   noReviewsText: { color: '#666', fontSize: 16 },
+>   card: { margin: 16, marginTop: 0, padding: 16,
+>     backgroundColor: '#FAFAFA', borderRadius: 12,
+>     borderWidth: 1, borderColor: '#F0F0F0' },
+>   cardHeader: { flexDirection: 'row',
+>     alignItems: 'center', gap: 10 },
+>   avatar: { width: 40, height: 40, borderRadius: 20,
+>     backgroundColor: '#00C853', alignItems: 'center',
+>     justifyContent: 'center' },
+>   avatarText: { color: '#fff', fontWeight: '700', fontSize: 18 },
+>   reviewerName: { fontWeight: '700', color: '#1A1A1A' },
+>   reviewerCollege: { color: '#999', fontSize: 12 },
+>   stars: { fontSize: 14 },
+>   verifiedRow: { flexDirection: 'row',
+>     justifyContent: 'space-between',
+>     alignItems: 'center', marginVertical: 8 },
+>   verifiedBadge: { color: '#00C853', fontSize: 12, fontWeight: '600' },
+>   reviewDate: { color: '#999', fontSize: 12 },
+>   reviewTitle: { fontWeight: '700', fontSize: 15,
+>     color: '#1A1A1A', marginBottom: 4 },
+>   reviewBody: { color: '#555', fontSize: 14,
+>     lineHeight: 20, marginBottom: 8 },
+>   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+>   tag: { paddingHorizontal: 10, paddingVertical: 4,
+>     borderRadius: 12, backgroundColor: '#F0F0F0' },
+>   tagText: { fontSize: 12, color: '#555' },
+>   helpfulRow: { flexDirection: 'row', alignItems: 'center',
+>     justifyContent: 'space-between', marginTop: 12 },
+>   helpfulCount: { color: '#999', fontSize: 12 },
+>   helpfulBtn: { paddingHorizontal: 12, paddingVertical: 6,
+>     borderRadius: 8, borderWidth: 1, borderColor: '#E0E0E0' },
+>   helpfulText: { color: '#666', fontSize: 13 },
+>   loadMore: { margin: 16, padding: 16, borderRadius: 12,
+>     borderWidth: 1.5, borderColor: '#E0E0E0',
+>     alignItems: 'center' },
+>   loadMoreText: { color: '#00C853', fontWeight: '600' }
+> })
 > ```
 >
-> **Update `app/src/screens/MenuScreen.tsx`:**
-> Show rating on menu item cards:
+> ## Step 5 — Wire everything into Navigation
+>
+> **`app/src/navigation/Navigation.tsx`:**
 > ```tsx
-> // Each menu item card shows rating
-> {item.totalReviews > 0 ? (
->   <TouchableOpacity
->     onPress={() => navigation.navigate('ItemReviews', {
->       menuItemId: item._id,
->       menuItemName: item.name
->     })}
->   >
->     <View style={styles.ratingRow}>
->       <Text style={styles.ratingStar}>⭐</Text>
->       <Text style={styles.ratingValue}>
->         {item.averageRating.toFixed(1)}
->       </Text>
->       <Text style={styles.ratingCount}>
->         ({item.totalReviews})
->       </Text>
->     </View>
->   </TouchableOpacity>
-> ) : (
->   <Text style={styles.noRating}>No reviews yet</Text>
-> )}
-> ```
+> import RateOrderScreen from '../screens/RateOrderScreen'
+> import MenuItemReviewsScreen from '../screens/MenuItemReviewsScreen'
 >
-> **Add to `app/src/api/index.ts`:**
-> ```ts
-> // Reviews
-> export const getItemReviews = (
->   menuItemId: string,
->   page = 1,
->   sort = 'recent'
-> ) => api.get(`/reviews/menu/${menuItemId}?page=${page}&sort=${sort}`)
->   .then(r => r.data)
->
-> export const submitReview = (data: {
->   menuItemId: string
->   orderId: string
->   rating: number
->   title?: string
->   body?: string
->   tags?: string[]
-> }) => api.post('/reviews', data).then(r => r.data)
->
-> export const markReviewHelpful = (reviewId: string) =>
->   api.post(`/reviews/${reviewId}/helpful`).then(r => r.data)
->
-> export const getPendingReviews = () =>
->   api.get('/reviews/pending').then(r => r.data)
-> ```
->
-> **Add screens to `Navigation.tsx`:**
-> ```tsx
+> // Add inside Stack.Navigator
 > <Stack.Screen
 >   name="RateOrder"
 >   component={RateOrderScreen}
->   options={{ title: 'Rate Your Meal', headerShown: true }}
+>   options={{
+>     title: 'Rate Your Meal',
+>     headerStyle: { backgroundColor: '#fff' },
+>     headerTintColor: '#00C853'
+>   }}
 > />
 > <Stack.Screen
 >   name="ItemReviews"
 >   component={MenuItemReviewsScreen}
->   options={{ title: 'Reviews', headerShown: true }}
+>   options={({ route }: any) => ({
+>     title: route.params?.menuItemName ?? 'Reviews',
+>     headerStyle: { backgroundColor: '#fff' },
+>     headerTintColor: '#00C853'
+>   })}
 > />
 > ```
 >
-> ## Admin Panel — Reviews Management
+> ## Step 6 — Show rating on MenuScreen cards
 >
-> **Create `admin/src/pages/ReviewsPage.tsx`:**
+> Find each menu item card in `MenuScreen.tsx`.
+> Add rating display and make it tappable:
 > ```tsx
-> // Layout:
-> // ┌─────────────────────────────────────────┐
-> // │  ⭐ Reviews Management                  │
-> // │  College: [All ▼]  Item: [All ▼]       │
-> // │  Filter: [All] [Flagged] [Hidden]       │
-> // ├─────────────────────────────────────────┤
-> // │  TOP RATED ITEMS (this week)            │
-> // │  1. Masala Dosa    ⭐4.8  (23 reviews) │
-> // │  2. Filter Coffee  ⭐4.6  (18 reviews) │
-> // ├─────────────────────────────────────────┤
-> // │  RECENT REVIEWS                         │
-> // │  ┌────────────────────────────────────┐ │
-> // │  │ Rahul K. • Masala Dosa • ⭐⭐⭐⭐⭐ │ │
-> // │  │ "Best in campus..."                │ │
-> // │  │ [👁️ Visible] [🚫 Hide] [🗑️ Delete] │ │
-> // │  └────────────────────────────────────┘ │
-> // └─────────────────────────────────────────┘
+> // Inside menu item card
+> <TouchableOpacity
+>   onPress={() => navigation.navigate('ItemReviews', {
+>     menuItemId: item._id,
+>     menuItemName: item.name
+>   })}
+>   style={styles.ratingRow}
+> >
+>   {item.totalReviews > 0 ? (
+>     <>
+>       <Text style={styles.ratingStar}>⭐</Text>
+>       <Text style={styles.ratingValue}>
+>         {Number(item.averageRating).toFixed(1)}
+>       </Text>
+>       <Text style={styles.ratingCount}>
+>         ({item.totalReviews})
+>       </Text>
+>       <Text style={styles.ratingArrow}>›</Text>
+>     </>
+>   ) : (
+>     <Text style={styles.noRating}>No reviews yet</Text>
+>   )}
+> </TouchableOpacity>
+>
+> // Styles
+> ratingRow: { flexDirection: 'row', alignItems: 'center',
+>   gap: 4, marginTop: 4 },
+> ratingStar: { fontSize: 13 },
+> ratingValue: { fontWeight: '700', color: '#1A1A1A', fontSize: 13 },
+> ratingCount: { color: '#999', fontSize: 12 },
+> ratingArrow: { color: '#00C853', fontWeight: '700' },
+> noRating: { color: '#CCC', fontSize: 12 }
 > ```
 >
-> **Add to admin API:**
-> ```ts
-> export const getAllReviews = (params?: {
->   college?: string, menuItemId?: string, isVisible?: boolean
-> }) => api.get('/reviews/admin', { params }).then(r => r.data)
+> ## Step 7 — Prompt to rate from OrdersScreen
 >
-> export const toggleReviewVisibility = (id: string, isVisible: boolean) =>
->   api.patch(`/reviews/${id}/visibility`, { isVisible })
-> ```
->
-> Add to admin reviews route in backend:
-> ```ts
-> // GET /api/reviews/admin (admin only)
-> router.get('/admin', requireAuth, requireRoles(['manager','admin']),
->   async (req, res) => {
->     const { college, menuItemId, isVisible } = req.query
->     const filter: any = {}
->
->     if (college) filter.college = college
->     else if (req.user.role !== 'admin') filter.college = req.user.college
->
->     if (menuItemId) filter.menuItem = menuItemId
->     if (isVisible !== undefined) filter.isVisible = isVisible === 'true'
->
->     const reviews = await Review.find(filter)
->       .populate('student', 'name college email')
->       .populate('menuItem', 'name')
->       .sort({ createdAt: -1 })
->       .limit(100)
->       .lean()
->
->     res.json(reviews)
->   }
-> )
-> ```
->
-> **Add route to admin App.tsx:**
+> In `app/src/screens/OrdersScreen.tsx`:
 > ```tsx
-> <Route path="/reviews" element={
->   <ProtectedRoute roles={['manager','admin']}>
->     <ReviewsPage />
->   </ProtectedRoute>
-> } />
-> ```
+> // For fulfilled orders, show rate button
+> {order.status === 'fulfilled' && (
+>   <TouchableOpacity
+>     style={styles.rateBtn}
+>     onPress={() => navigation.navigate('RateOrder', {
+>       orderId: order._id
+>     })}
+>   >
+>     <Text style={styles.rateBtnText}>⭐ Rate this order</Text>
+>   </TouchableOpacity>
+> )}
 >
-> Add to sidebar:
-> ```tsx
-> { label: '⭐ Reviews', path: '/reviews', roles: ['manager','admin'] }
+> rateBtn: {
+>   marginTop: 8,
+>   paddingVertical: 8,
+>   paddingHorizontal: 16,
+>   backgroundColor: '#FFF8E1',
+>   borderRadius: 8,
+>   borderWidth: 1,
+>   borderColor: '#FFC107',
+>   alignSelf: 'flex-start'
+> },
+> rateBtnText: {
+>   color: '#F57F17',
+>   fontWeight: '600',
+>   fontSize: 13
+> }
 > ```
 >
 > ---
@@ -1217,30 +1398,17 @@ Copy into a fresh conversation:
 > ## FINAL VERIFICATION
 >
 > ```bash
-> # Backend TypeScript
 > cd backend && npx tsc --noEmit
 >
-> # Start and test new routes
 > cd backend && npm run dev &
 > sleep 5
 >
-> # Test notification token save
-> curl -X POST http://localhost:4000/api/notifications/token \
->   -H "Authorization: Bearer YOUR_TOKEN" \
->   -H "Content-Type: application/json" \
->   -d '{"expoPushToken":"ExponentPushToken[test]"}'
+> # Test all new routes exist
+> curl http://localhost:4000/api/rush-hours?college=DSCE
+> curl http://localhost:4000/api/pickup-settings/DSCE
+> curl http://localhost:4000/api/reviews/menu/FAKE_ID
 >
-> # Test reviews fetch (public)
-> curl http://localhost:4000/api/reviews/menu/SOME_MENU_ITEM_ID
->
-> # Test pending reviews
-> curl http://localhost:4000/api/reviews/pending \
->   -H "Authorization: Bearer YOUR_TOKEN"
->
-> # Admin build
 > cd admin && npm run build
->
-> # Mobile export
 > cd app && npx expo export --platform android
 >
 > kill %1
@@ -1252,62 +1420,45 @@ Copy into a fresh conversation:
 >
 > ```
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-> FEATURE REPORT
+> FIX REPORT
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 >
-> FEATURE 1 — NOTIFICATIONS:
->   notification.service.ts:     YES/NO
->   Push token saved on login:   YES/NO
->   Token cleared on logout:     YES/NO
->   Order paid notification:     YES/NO
->   Order ready notification:    YES/NO
->   Order fulfilled + reminder:  YES/NO
->   Admin broadcast page:        YES/NO
->   Daily special announce:      YES/NO
->   app.json plugin added:       YES/NO
+> FIX 1 — Rush Hour Sync:
+>   Root cause of no-sync:        [explain]
+>   Route mounted:                YES/NO
+>   Mobile polling added:         YES/NO
+>   Socket emit on change:        YES/NO
+>   App state refetch:            YES/NO
+>   Banner shows correctly:       YES/NO
 >
-> FEATURE 2 — REVIEWS:
->   Review model created:        YES/NO
->   MenuItem rating fields:      YES/NO
->   Public reviews GET route:    YES/NO
->   Verified purchase check:     YES/NO
->   One review per order item:   YES/NO
->   Helpful votes:               YES/NO
->   Admin hide/show reviews:     YES/NO
->   RateOrderScreen:             YES/NO
->   Star animation:              YES/NO
->   Quick tags:                  YES/NO
->   ItemReviewsScreen:           YES/NO
->   Rating bars (Amazon style):  YES/NO
->   Rating on menu cards:        YES/NO
->   Admin reviews page:          YES/NO
+> FIX 2 — Pickup Times:
+>   PickupSettings model:         YES/NO
+>   Pickup route mounted:         YES/NO
+>   Admin settings page:          YES/NO
+>   Open/closed toggle:           YES/NO
+>   Estimate on cart screen:      YES/NO
+>   Estimate on success screen:   YES/NO
+>   Socket update on change:      YES/NO
+>
+> FIX 3 — Reviews:
+>   Reviews route mounted:        YES/NO
+>   RateOrderScreen created:      YES/NO
+>   MenuItemReviewsScreen:        YES/NO
+>   Both in Navigation.tsx:       YES/NO
+>   Rating on menu cards:         YES/NO
+>   Rate button on OrdersScreen:  YES/NO
+>   Admin reviews page:           YES/NO
 >
 > BUILD:
 >   tsc --noEmit:    CLEAN/ERRORS
 >   admin build:     CLEAN/ERRORS
 >   mobile export:   CLEAN/ERRORS
->
-> ENV VARS NEEDED:
->   EXPO_PUBLIC_PROJECT_ID → get from expo.dev dashboard
 > ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 > ```
 >
 > **RULES:**
 > - Never touch .env files
-> - Never touch payment, webhook, QR, Razorpay, socket events
+> - Never touch payment, webhook, Razorpay, QR, notifications
 > - Show diff before every change
-> - Fix in order: Feature 1 → Feature 2
-> - Run tsc after every feature
-> - One file at a time
-
----
-
-## One Thing You Do Before Running
-
-Get your Expo Project ID — needed for push notifications:
-```
-expo.dev → log in → your project → copy the Project ID
-Add to app/.env: EXPO_PUBLIC_PROJECT_ID=your-project-id
-```
-
-Everything else the agent handles.
+> - Fix in order: 1 → 2 → 3
+> - Run tsc after every fix

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -12,12 +12,13 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { menuApi, orderApi } from '../api';
+import { menuApi, orderApi, pickupSettingsApi, rushHoursApi } from '../api';
 import AppIcon from '../components/AppIcon';
 import FoodCard from '../components/FoodCard';
 import PickupTimePanel from '../components/PickupTimePanel';
-import { getCanteenName } from '../constants/colleges';
+import { DEFAULT_COLLEGE, getCanteenName, normalizeCollege } from '../constants/colleges';
 import { useAuthStore } from '../stores/authStore';
+import { useCanteenStore } from '../stores/canteenStore';
 import { useCartStore } from '../stores/cartStore';
 import { MainTabNavigationProp, MenuItem } from '../types';
 import { palette, shadows } from '../theme';
@@ -36,8 +37,17 @@ export default function CartScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const userCollege = user?.college;
+  const resolvedCollege = normalizeCollege(userCollege) || DEFAULT_COLLEGE;
   const { items, addItem, updateChefNote, updateQuantity, setScheduledTime, total } =
     useCartStore();
+  const pickupSettings = useCanteenStore(
+    (state) => state.pickupSettingsByCollege[resolvedCollege] || null,
+  );
+  const rushHourStatus = useCanteenStore(
+    (state) => state.rushStatusByCollege[resolvedCollege] || null,
+  );
+  const setPickupSettings = useCanteenStore((state) => state.setPickupSettings);
+  const setRushStatus = useCanteenStore((state) => state.setRushStatus);
   const [suggestedItems, setSuggestedItems] = useState<MenuItem[]>([]);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -45,6 +55,39 @@ export default function CartScreen() {
   const [selectedPickupTime, setSelectedPickupTime] = useState(
     items[0]?.scheduledTime || getDefaultPickupTime(new Date(), userCollege),
   );
+
+  useEffect(() => {
+    if (pickupSettings && rushHourStatus) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadRuntime = async () => {
+      const [pickupResult, rushResult] = await Promise.allSettled([
+        pickupSettingsApi.getSettings(userCollege),
+        rushHoursApi.getStatus(userCollege),
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (pickupResult.status === 'fulfilled') {
+        setPickupSettings(pickupResult.value.data);
+      }
+
+      if (rushResult.status === 'fulfilled') {
+        setRushStatus(userCollege, rushResult.value.data);
+      }
+    };
+
+    void loadRuntime();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pickupSettings, rushHourStatus, setPickupSettings, setRushStatus, userCollege]);
 
   useEffect(() => {
     const loadSuggestions = async () => {
@@ -80,9 +123,32 @@ export default function CartScreen() {
   const subtotal = total();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const canteenName = getCanteenName(user?.college);
+  const orderingClosed = pickupSettings ? !pickupSettings.isCurrentlyOpen : false;
+  const estimatedMinutes = useMemo(() => {
+    if (!pickupSettings) {
+      return null;
+    }
+
+    let minutes =
+      pickupSettings.basePickupMinutes + pickupSettings.perItemExtra * totalItems;
+
+    if (rushHourStatus?.isRushHour) {
+      minutes += pickupSettings.rushHourExtra;
+    }
+
+    return Math.min(minutes, pickupSettings.maxPickupMinutes);
+  }, [pickupSettings, rushHourStatus?.isRushHour, totalItems]);
+  const estimatedPickupAt = estimatedMinutes
+    ? new Date(Date.now() + estimatedMinutes * 60 * 1000)
+    : null;
 
   const handleCreateOrder = async () => {
     if (items.length === 0 || isCreatingOrder) {
+      return;
+    }
+
+    if (orderingClosed) {
+      setErrorMessage(pickupSettings?.closedMessage || 'Ordering is currently unavailable.');
       return;
     }
 
@@ -119,6 +185,11 @@ export default function CartScreen() {
   };
 
   const handleAddSuggestedItem = async (item: MenuItem) => {
+    if (orderingClosed) {
+      setErrorMessage(pickupSettings?.closedMessage || 'Ordering is currently unavailable.');
+      return;
+    }
+
     const existingItem = items.find((entry) => entry.menuItem.id === item.id);
     const nextQuantity = (existingItem?.quantity || 0) + 1;
 
@@ -205,6 +276,39 @@ export default function CartScreen() {
             college={userCollege}
           />
         </View>
+
+        {pickupSettings ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Pickup Estimate</Text>
+            <View style={styles.estimateRow}>
+              <View style={styles.estimateIcon}>
+                <AppIcon name="clock" size={18} color={palette.accent} />
+              </View>
+              <View style={styles.estimateCopy}>
+                <Text style={styles.estimateTitle}>
+                  {orderingClosed
+                    ? 'Ordering unavailable right now'
+                    : `Ready in about ${estimatedMinutes || 15} minutes`}
+                </Text>
+                <Text style={styles.estimateText}>
+                  {orderingClosed
+                    ? pickupSettings.closedMessage
+                    : estimatedPickupAt
+                      ? `Approx. pickup around ${estimatedPickupAt.toLocaleTimeString([], {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}`
+                      : 'Pickup estimate will appear here.'}
+                </Text>
+                {rushHourStatus?.isRushHour ? (
+                  <Text style={styles.estimateRushText}>
+                    Includes +{pickupSettings.rushHourExtra} min for the current rush hour.
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Your Order</Text>
@@ -377,9 +481,9 @@ export default function CartScreen() {
           activeOpacity={0.92}
           style={[
             styles.checkoutButton,
-            (items.length === 0 || isCreatingOrder) && styles.checkoutButtonDisabled,
+            (items.length === 0 || isCreatingOrder || orderingClosed) && styles.checkoutButtonDisabled,
           ]}
-          disabled={items.length === 0 || isCreatingOrder}
+          disabled={items.length === 0 || isCreatingOrder || orderingClosed}
           onPress={handleCreateOrder}
         >
           {isCreatingOrder ? (
@@ -389,7 +493,9 @@ export default function CartScreen() {
             </View>
           ) : (
             <View style={styles.checkoutRow}>
-              <Text style={styles.checkoutButtonText}>Continue to Payment</Text>
+              <Text style={styles.checkoutButtonText}>
+                {orderingClosed ? 'Ordering unavailable' : 'Continue to Payment'}
+              </Text>
               <AppIcon name="chevron-right" size={18} color={palette.surface} />
             </View>
           )}
@@ -515,6 +621,38 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontSize: 12,
     fontWeight: '600',
+  },
+  estimateRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  estimateIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: palette.warningSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  estimateCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  estimateTitle: {
+    color: palette.ink,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  estimateText: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  estimateRushText: {
+    color: palette.accent,
+    fontSize: 12,
+    fontWeight: '700',
   },
   noteToggle: {
     alignSelf: 'flex-start',

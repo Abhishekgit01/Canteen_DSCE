@@ -172,6 +172,8 @@ export default function PaymentScreen() {
         orderId: order.id || order._id || orderId,
         qrToken: qrToken,
         amount: order.totalAmount,
+        estimatedPickupMinutes: order.estimatedPickupMinutes,
+        estimatedPickupAt: order.estimatedPickupAt,
         items: order.items.map((i: any) => ({
           name: i.name || i.menuItem?.name || 'Item',
           quantity: i.quantity,

@@ -77,6 +77,13 @@ export const rushHoursApi = {
   deleteRushHour: (id: string) => api.delete(`/rush-hours/${id}`),
 };
 
+export const pickupSettingsApi = {
+  getPickupSettings: (college: string) =>
+    api.get(`/pickup-settings/${college}`).then((response) => response.data),
+  updatePickupSettings: (college: string, data: any) =>
+    api.patch(`/pickup-settings/${college}`, data).then((response) => response.data),
+};
+
 export const notificationsApi = {
   getHistory: (college?: string) =>
     api.get('/notifications/history', { params: college ? { college } : {} }),

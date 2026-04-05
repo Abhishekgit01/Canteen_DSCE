@@ -31,6 +31,17 @@ export default function PaymentSuccessScreen() {
   const circleProgress = useSharedValue(0);
   const checkProgress = useSharedValue(0);
 
+  const formatEstimatedPickup = (value?: string) => {
+    if (!value) {
+      return '';
+    }
+
+    return new Date(value).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   useEffect(() => {
     // Sequence:
     // 0-600ms: draw circle
@@ -132,6 +143,23 @@ export default function PaymentSuccessScreen() {
               {new Date(params.paidAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </Text>
           </View>
+
+          {params.estimatedPickupMinutes ? (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.pickupRow}>
+                <View>
+                  <Text style={styles.pickupLabel}>Ready for pickup in</Text>
+                  <Text style={styles.pickupValue}>~{params.estimatedPickupMinutes} minutes</Text>
+                  {params.estimatedPickupAt ? (
+                    <Text style={styles.pickupAt}>
+                      Around {formatEstimatedPickup(params.estimatedPickupAt)}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            </>
+          ) : null}
         </Animated.View>
 
         {/* QR Code */}
@@ -281,6 +309,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#ffffff',
     fontWeight: '500',
+  },
+  pickupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pickupLabel: {
+    fontSize: 13,
+    color: '#8f9bb3',
+  },
+  pickupValue: {
+    marginTop: 4,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  pickupAt: {
+    marginTop: 4,
+    fontSize: 13,
+    color: '#00C853',
+    fontWeight: '600',
   },
   qrContainer: {
     alignItems: 'center',

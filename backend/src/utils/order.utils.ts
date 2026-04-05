@@ -39,6 +39,8 @@ export function serializeOrder(order: any, options: { includeQrToken?: boolean }
           }))
       : [],
     scheduledTime: doc.scheduledTime,
+    estimatedPickupMinutes: doc.estimatedPickupMinutes,
+    estimatedPickupAt: doc.estimatedPickupAt,
     totalAmount: doc.totalAmount,
     status: doc.status,
     paymentMethod: doc.paymentMethod,

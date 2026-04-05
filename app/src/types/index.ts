@@ -64,6 +64,8 @@ export interface Order {
     chefNote?: string;
   }[];
   scheduledTime: string;
+  estimatedPickupMinutes?: number;
+  estimatedPickupAt?: string;
   totalAmount: number;
   paymentMethod?: string;
   razorpayOrderId?: string;
@@ -129,6 +131,24 @@ export interface RushHourStatus {
   isRushHour: boolean;
   current: RushHourRule | null;
   all: RushHourRule[];
+}
+
+export interface PickupSettings {
+  college: College;
+  basePickupMinutes: number;
+  rushHourExtra: number;
+  perItemExtra: number;
+  maxPickupMinutes: number;
+  openingTime: string;
+  closingTime: string;
+  breakStart: string;
+  breakEnd: string;
+  hasBreak: boolean;
+  isOpen: boolean;
+  closedMessage: string;
+  isCurrentlyOpen: boolean;
+  currentTime: string;
+  updatedAt?: string;
 }
 
 type PaymentInitBase = {
@@ -209,6 +229,8 @@ export type RootStackParamList = {
     orderId: string;
     qrToken: string;
     amount: number;
+    estimatedPickupMinutes?: number;
+    estimatedPickupAt?: string;
     items: {
       name: string;
       quantity: number;

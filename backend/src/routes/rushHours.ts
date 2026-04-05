@@ -1,6 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import { io } from '../server.js';
 import { DEFAULT_COLLEGE, normalizeCollege, resolveCollege, type SupportedCollege } from '../config/college.js';
 import { User } from '../models/index.js';
 import { RushHour } from '../models/RushHour.js';
@@ -31,6 +32,13 @@ type RushHourBody = {
 };
 
 const TIME_PATTERN = /^\d{2}:\d{2}$/;
+
+function emitRushHourUpdate(college: SupportedCollege) {
+  io.emit(`rush:updated:${college}`, {
+    college,
+    timestamp: new Date().toISOString(),
+  });
+}
 
 function requireRoles(roles: UserRole[]) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -242,6 +250,7 @@ router.post(
         createdBy: new mongoose.Types.ObjectId(req.user!.id),
       });
 
+      emitRushHourUpdate(college);
       res.status(201).json(rushHour);
     } catch {
       res.status(500).json({ error: 'Failed to create rush hour' });
@@ -268,6 +277,7 @@ router.patch(
         return res.status(403).json({ error: 'Not authorized for this college rush hour' });
       }
 
+      const previousCollege = resolveCollege(rushHour.college);
       const { errors, payload } = validateRushHourPayload(req.body as RushHourBody, true);
       if (errors.length > 0) {
         return res.status(400).json({ error: errors.join('. ') });
@@ -283,6 +293,10 @@ router.patch(
 
       Object.assign(rushHour, payload);
       await rushHour.save();
+      emitRushHourUpdate(resolveCollege(rushHour.college));
+      if (previousCollege !== resolveCollege(rushHour.college)) {
+        emitRushHourUpdate(previousCollege);
+      }
       res.json(rushHour);
     } catch {
       res.status(500).json({ error: 'Failed to update rush hour' });
@@ -309,7 +323,9 @@ router.delete(
         return res.status(403).json({ error: 'Not authorized for this college rush hour' });
       }
 
+      const deletedCollege = resolveCollege(rushHour.college);
       await rushHour.deleteOne();
+      emitRushHourUpdate(deletedCollege);
       res.json({ message: 'Rush hour deleted' });
     } catch {
       res.status(500).json({ error: 'Failed to delete rush hour' });

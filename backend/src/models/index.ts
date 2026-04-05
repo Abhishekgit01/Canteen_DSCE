@@ -313,6 +313,14 @@ const orderSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  estimatedPickupMinutes: {
+    type: Number,
+    default: 15,
+    min: 0,
+  },
+  estimatedPickupAt: {
+    type: Date,
+  },
   totalAmount: {
     type: Number,
     required: true,

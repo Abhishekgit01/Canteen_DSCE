@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Image,
   ScrollView,
@@ -11,10 +11,13 @@ import {
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { pickupSettingsApi } from '../api';
 import AppIcon from '../components/AppIcon';
 import PickupTimePanel from '../components/PickupTimePanel';
+import { DEFAULT_COLLEGE, normalizeCollege } from '../constants/colleges';
 import { useFavoritesStore } from '../stores/favoritesStore';
 import { useAuthStore } from '../stores/authStore';
+import { useCanteenStore } from '../stores/canteenStore';
 import { useCartStore } from '../stores/cartStore';
 import { RootStackNavigationProp, RootStackRouteProp } from '../types';
 import { palette, shadows } from '../theme';
@@ -27,16 +30,51 @@ export default function ItemDetailScreen() {
   const { item } = route.params;
   const { user } = useAuthStore();
   const userCollege = user?.college || item.college;
+  const resolvedCollege = normalizeCollege(userCollege) || DEFAULT_COLLEGE;
   const { addItem } = useCartStore();
   const { isFavorite, toggleFavorite } = useFavoritesStore();
+  const pickupSettings = useCanteenStore(
+    (state) => state.pickupSettingsByCollege[resolvedCollege] || null,
+  );
+  const setPickupSettings = useCanteenStore((state) => state.setPickupSettings);
 
   const [selectedTemp, setSelectedTemp] = useState(item.tempOptions[0] || 'normal');
   const [quantity, setQuantity] = useState(1);
   const [scheduledTime, setScheduledTime] = useState(getDefaultPickupTime(new Date(), userCollege));
   const [chefNote, setChefNote] = useState('');
   const selectedPickupTime = scheduledTime || getDefaultPickupTime(new Date(), userCollege);
+  const orderingClosed = pickupSettings ? !pickupSettings.isCurrentlyOpen : false;
+
+  useEffect(() => {
+    if (pickupSettings) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPickupSettings = async () => {
+      try {
+        const response = await pickupSettingsApi.getSettings(userCollege);
+        if (!cancelled) {
+          setPickupSettings(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch pickup settings:', error);
+      }
+    };
+
+    void loadPickupSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pickupSettings, setPickupSettings, userCollege]);
 
   const handleAddToCart = async () => {
+    if (orderingClosed) {
+      return;
+    }
+
     await addItem({
       menuItem: item,
       quantity,
@@ -130,6 +168,15 @@ export default function ItemDetailScreen() {
             ) : null}
 
             <View style={styles.section}>
+              {orderingClosed ? (
+                <View style={styles.closedCard}>
+                  <Text style={styles.closedCardTitle}>Ordering paused</Text>
+                  <Text style={styles.closedCardText}>
+                    {pickupSettings?.closedMessage || 'The canteen is currently closed.'}
+                  </Text>
+                </View>
+              ) : null}
+
               <PickupTimePanel
                 value={selectedPickupTime}
                 onChange={setScheduledTime}
@@ -184,7 +231,7 @@ export default function ItemDetailScreen() {
         </View>
         <TouchableOpacity activeOpacity={0.92} style={styles.addButton} onPress={() => void handleAddToCart()}>
           <AppIcon name="cart-outline" size={18} color={palette.surface} />
-          <Text style={styles.addButtonText}>Add to Cart</Text>
+          <Text style={styles.addButtonText}>{orderingClosed ? 'Ordering Closed' : 'Add to Cart'}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -264,6 +311,22 @@ const styles = StyleSheet.create({
     color: palette.accent,
     fontSize: 12,
     fontWeight: '800',
+  },
+  closedCard: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: 18,
+    padding: 14,
+    gap: 6,
+  },
+  closedCardTitle: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  closedCardText: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   summaryMeta: {
     flexDirection: 'row',
