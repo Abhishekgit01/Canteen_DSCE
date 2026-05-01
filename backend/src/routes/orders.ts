@@ -5,7 +5,6 @@ import mongoose from 'mongoose';
 import { resolveCollege, type SupportedCollege } from '../config/college.js';
 import { io } from '../server.js';
 import { MenuItem, Order, User } from '../models/index.js';
-import { PickupSettings } from '../models/PickupSettings.js';
 import { createRazorpayOrder, initiatePayment } from '../services/payment.service.js';
 import { finalizeOrder, finalizePaidOrder } from '../services/order-payment.service.js';
 import {
@@ -14,7 +13,10 @@ import {
 } from '../services/notification.service.js';
 import {
   calculateEstimatedPickup,
+  getCurrentTimeString,
+  getPickupSettingsRecord,
   getPickupRuntimeSettings,
+  isWithinOperatingHours,
 } from '../services/pickup-settings.service.js';
 import { serializeOrder } from '../utils/order.utils.js';
 import { getPaymentMode, PaymentMode } from '../utils/paymentMode.js';
@@ -270,6 +272,10 @@ router.post(
         const now = new Date();
         const maxAdvance = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
+        if (Number.isNaN(scheduledDate.getTime())) {
+          return res.status(400).json({ error: 'Invalid pre-order time selected' });
+        }
+
         if (scheduledDate <= now) {
           return res.status(400).json({ error: 'Pre-order time must be in the future' });
         }
@@ -277,17 +283,14 @@ router.post(
           return res.status(400).json({ error: 'Cannot pre-order more than 7 days in advance' });
         }
 
-        const settings = await PickupSettings.findOne({ college }).lean();
-        if (settings) {
-          const ISTOffset = 5.5 * 60 * 60 * 1000;
-          const scheduledIST = new Date(scheduledDate.getTime() + ISTOffset);
-          const timeStr = `${String(scheduledIST.getUTCHours()).padStart(2, '0')}:${String(scheduledIST.getUTCMinutes()).padStart(2, '0')}`;
-
-          if (timeStr < settings.openingTime || timeStr > settings.closingTime) {
-            return res.status(400).json({ error: `Canteen is only open ${settings.openingTime} - ${settings.closingTime}` });
-          }
+        const settings = await getPickupSettingsRecord(college);
+        if (!isWithinOperatingHours(settings, scheduledDate, { ignoreManualClosure: true })) {
+          return res.status(400).json({
+            error: `Canteen is only open ${settings.openingTime} - ${settings.closingTime}`,
+          });
         }
-        resolvedScheduledTime = scheduledFor; // Ignore normal format when pre-ordering
+
+        resolvedScheduledTime = getCurrentTimeString(scheduledDate);
       }
 
       if (!Array.isArray(items) || items.length === 0) {

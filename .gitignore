@@ -1,10 +1,14 @@
 # Sensitive project files
+.codex
 .orchids/
+.gradle-local/
 .canteen-progress.md
 canteen-context.md
 implement.md
+CANTEEN_FROM_ZERO_GUIDE.md
 Ybyte.png
 Ybyte_squared.png
+screen.png
 canteen-payments-worker/
 
 # Dependencies
@@ -20,6 +24,9 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+*.apk
+*.aab
+*.dm
 
 # Logs
 npm-debug.log*
@@ -43,6 +50,8 @@ Thumbs.db
 
 # Expo
 .expo/
+.expo-export-check/
+*.keystore
 *.jks
 *.p8
 *.p12

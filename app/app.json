@@ -29,6 +29,9 @@
         "CAMERA",
         "INTERNET",
         "ACCESS_NETWORK_STATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -40,7 +43,12 @@
       }
     },
     "plugins": [
-      "expo-camera",
+      [
+        "expo-camera",
+        {
+          "recordAudioAndroid": false
+        }
+      ],
       "expo-secure-store",
       "@react-native-community/datetimepicker",
       "expo-web-browser",

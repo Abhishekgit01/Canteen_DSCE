@@ -53,7 +53,7 @@ export const ordersApi = {
   getOrderById: (orderId: string) => api.get(`/orders/${orderId}`),
   createOrder: (items: any[]) => api.post('/orders', { items }),
   updateOrderStatus: (orderId: string, status: string) =>
-    api.patch(`/orders/${orderId}/status`, { status }),
+    api.patch(`/admin/orders/${orderId}/status`, { status }),
   fulfillOrder: (orderId: string, qrToken: string) =>
     api.post(`/orders/${orderId}/fulfill`, { qrToken }),
 };

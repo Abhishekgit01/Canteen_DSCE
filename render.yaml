@@ -28,7 +28,19 @@ services:
         sync: false
       - key: RESEND_API_KEY
         sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
       - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: AUTH_VERIFICATION_MODE
+        value: auto
+      - key: INTERNAL_SECRET
+        sync: false
+      - key: PAYMENT_MODE
+        sync: false
+      - key: CANTEEN_UPI_ID
+        sync: false
+      - key: CANTEEN_NAME
         sync: false
       - key: RAZORPAY_KEY_ID
         sync: false

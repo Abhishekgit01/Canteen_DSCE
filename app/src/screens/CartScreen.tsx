@@ -22,7 +22,12 @@ import { DEFAULT_COLLEGE, getCanteenName, normalizeCollege } from '../constants/
 import { useAuthStore } from '../stores/authStore';
 import { useCanteenStore } from '../stores/canteenStore';
 import { useCartStore } from '../stores/cartStore';
-import { MainTabNavigationProp, MenuItem } from '../types';
+import {
+  MainTabNavigationProp,
+  MenuItem,
+  PickupSettings as PickupSettingsRecord,
+  RushHourStatus,
+} from '../types';
 import { palette, shadows } from '../theme';
 import { getMenuItemId } from '../utils/menu';
 import {
@@ -32,6 +37,155 @@ import {
 
 function getErrorMessage(error: any) {
   return error?.response?.data?.error || 'Could not create your order. Please try again.';
+}
+
+type PreOrderSuggestion = {
+  id: string;
+  label: string;
+  caption: string;
+  value: Date;
+};
+
+function parseClock(value?: string | null, fallbackHours = 12, fallbackMinutes = 0) {
+  const [rawHours, rawMinutes] = String(value || '').split(':');
+  const hours = Number(rawHours);
+  const minutes = Number(rawMinutes);
+
+  return {
+    hours: Number.isFinite(hours) ? hours : fallbackHours,
+    minutes: Number.isFinite(minutes) ? minutes : fallbackMinutes,
+  };
+}
+
+function setClockOnDate(base: Date, value?: string | null, fallbackHours = 12, fallbackMinutes = 0) {
+  const { hours, minutes } = parseClock(value, fallbackHours, fallbackMinutes);
+  const next = new Date(base);
+
+  next.setHours(hours, minutes, 0, 0);
+  return next;
+}
+
+function roundUpDate(date: Date, intervalMinutes = 15) {
+  const rounded = new Date(date);
+  const remainder = rounded.getMinutes() % intervalMinutes;
+
+  if (remainder !== 0) {
+    rounded.setMinutes(rounded.getMinutes() + intervalMinutes - remainder);
+  }
+
+  rounded.setSeconds(0, 0);
+  return rounded;
+}
+
+function isSameDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function formatPreOrderSlot(date: Date, now = new Date()) {
+  const dayLabel = isSameDay(date, now)
+    ? 'Today'
+    : isSameDay(date, new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1))
+      ? 'Tomorrow'
+      : date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+  const timeLabel = date.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  return `${dayLabel} · ${timeLabel}`;
+}
+
+function getNextPreOrderDate(
+  pickupSettings: PickupSettingsRecord | null,
+  candidate: Date,
+  intervalMinutes = 15,
+) {
+  if (!pickupSettings) {
+    return roundUpDate(new Date(candidate), intervalMinutes);
+  }
+
+  let next = roundUpDate(candidate, intervalMinutes);
+
+  for (let dayOffset = 0; dayOffset < 8; dayOffset += 1) {
+    const serviceStart = setClockOnDate(next, pickupSettings.openingTime, 9);
+    const serviceEnd = setClockOnDate(next, pickupSettings.closingTime, 20);
+
+    if (next < serviceStart) {
+      next = new Date(serviceStart);
+    }
+
+    if (pickupSettings.hasBreak) {
+      const breakStart = setClockOnDate(next, pickupSettings.breakStart, 15);
+      const breakEnd = setClockOnDate(next, pickupSettings.breakEnd, 16);
+
+      if (next >= breakStart && next < breakEnd) {
+        next = roundUpDate(new Date(breakEnd), intervalMinutes);
+      }
+    }
+
+    if (next <= serviceEnd) {
+      return next;
+    }
+
+    const tomorrow = new Date(next);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    next = roundUpDate(setClockOnDate(tomorrow, pickupSettings.openingTime, 9), intervalMinutes);
+  }
+
+  return next;
+}
+
+function buildPreOrderSuggestions(
+  pickupSettings: PickupSettingsRecord | null,
+  rushHourStatus: RushHourStatus | null,
+  now = new Date(),
+): PreOrderSuggestion[] {
+  const leadMinutes = pickupSettings?.basePickupMinutes ?? 20;
+  const suggestions: PreOrderSuggestion[] = [];
+  const seen = new Set<number>();
+  const addSuggestion = (id: string, label: string, baseDate: Date) => {
+    const value = getNextPreOrderDate(pickupSettings, baseDate);
+    const stamp = value.getTime();
+
+    if (seen.has(stamp)) {
+      return;
+    }
+
+    seen.add(stamp);
+    suggestions.push({
+      id,
+      label,
+      caption: formatPreOrderSlot(value, now),
+      value,
+    });
+  };
+
+  addSuggestion(
+    'earliest',
+    'Earliest slot',
+    new Date(now.getTime() + leadMinutes * 60 * 1000),
+  );
+
+  const primaryRushHour = rushHourStatus?.current || rushHourStatus?.all?.[0] || null;
+  if (primaryRushHour) {
+    addSuggestion(
+      'rush',
+      primaryRushHour.label || 'Lunch rush',
+      setClockOnDate(now, primaryRushHour.startTime, 12, 30),
+    );
+  }
+
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  addSuggestion('tomorrow-open', 'Tomorrow opening', setClockOnDate(tomorrow, pickupSettings?.openingTime, 9));
+  addSuggestion('tomorrow-lunch', 'Tomorrow lunch', setClockOnDate(tomorrow, '12:30', 12, 30));
+
+  return suggestions.slice(0, 4);
 }
 
 export default function CartScreen() {
@@ -148,9 +302,33 @@ export default function CartScreen() {
   const estimatedPickupAt = estimatedMinutes
     ? new Date(Date.now() + estimatedMinutes * 60 * 1000)
     : null;
+  const preOrderSuggestions = useMemo(
+    () => buildPreOrderSuggestions(pickupSettings, rushHourStatus),
+    [pickupSettings, rushHourStatus],
+  );
+  const nextSuggestedPreOrder = preOrderSuggestions[0]?.value || null;
+  const isOrderingClosedNow = pickupSettings?.isCurrentlyOpen === false;
+  const checkoutNeedsPreOrder = isOrderingClosedNow && !isPreOrder;
+
+  useEffect(() => {
+    if (!isPreOrder || scheduledFor || !nextSuggestedPreOrder) {
+      return;
+    }
+
+    setScheduledFor(new Date(nextSuggestedPreOrder));
+  }, [isPreOrder, nextSuggestedPreOrder, scheduledFor]);
 
   const handleCreateOrder = async () => {
     if (items.length === 0 || isCreatingOrder) {
+      return;
+    }
+
+    if (checkoutNeedsPreOrder) {
+      setIsPreOrder(true);
+      if (nextSuggestedPreOrder) {
+        setScheduledFor(new Date(nextSuggestedPreOrder));
+      }
+      setErrorMessage('The canteen is closed right now, so we switched you to a scheduled pre-order.');
       return;
     }
 
@@ -272,6 +450,47 @@ export default function CartScreen() {
           </View>
         </View>
 
+        {pickupSettings && !pickupSettings.isCurrentlyOpen ? (
+          <View style={[styles.card, styles.closedNoticeCard]}>
+            <View style={styles.closedNoticeTopRow}>
+              <View style={styles.closedNoticeIconWrap}>
+                <AppIcon name="clock" size={18} color={palette.brand} />
+              </View>
+              <View style={styles.closedNoticeCopy}>
+                <Text style={styles.closedNoticeTitle}>
+                  {pickupSettings.closedMessage || 'Canteen is currently closed'}
+                </Text>
+                <Text style={styles.closedNoticeText}>
+                  You can still lock in this order for a future slot and avoid the next rush.
+                </Text>
+              </View>
+            </View>
+
+            {nextSuggestedPreOrder ? (
+              <View style={styles.closedNoticeHighlight}>
+                <Text style={styles.closedNoticeHighlightLabel}>Best next slot</Text>
+                <Text style={styles.closedNoticeHighlightValue}>
+                  {formatPreOrderSlot(nextSuggestedPreOrder)}
+                </Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              activeOpacity={0.92}
+              style={styles.closedNoticeButton}
+              onPress={() => {
+                setIsPreOrder(true);
+                if (nextSuggestedPreOrder) {
+                  setScheduledFor(new Date(nextSuggestedPreOrder));
+                }
+                setErrorMessage('');
+              }}
+            >
+              <Text style={styles.closedNoticeButtonText}>Schedule Instead</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {!isPreOrder && (
           <View style={styles.card}>
             <PickupTimePanel
@@ -316,11 +535,22 @@ export default function CartScreen() {
           <View style={styles.preOrderRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.sectionTitle}>Pre-Order Options</Text>
-              <Text style={styles.sectionHint}>Schedule your meal in advance.</Text>
+              <Text style={styles.sectionHint}>
+                {isOrderingClosedNow
+                  ? 'Pick a future slot and we will hold this checkout for when the canteen opens.'
+                  : 'Schedule your meal in advance for class breaks, lunch rush, or tomorrow.'}
+              </Text>
             </View>
             <Switch
               value={isPreOrder}
-              onValueChange={setIsPreOrder}
+              onValueChange={(value) => {
+                setIsPreOrder(value);
+                setErrorMessage('');
+
+                if (value && !scheduledFor && nextSuggestedPreOrder) {
+                  setScheduledFor(new Date(nextSuggestedPreOrder));
+                }
+              }}
               trackColor={{ false: palette.line, true: palette.surfaceMuted }}
               thumbColor={isPreOrder ? palette.brand : palette.surface}
             />
@@ -328,14 +558,76 @@ export default function CartScreen() {
 
           {isPreOrder && (
             <View style={styles.preOrderControls}>
+              <View style={styles.preOrderSummaryCard}>
+                <View style={styles.preOrderSummaryIcon}>
+                  <AppIcon name="calendar" size={18} color={palette.accent} />
+                </View>
+                <View style={styles.preOrderSummaryCopy}>
+                  <Text style={styles.preOrderSummaryEyebrow}>Scheduled For</Text>
+                  <Text style={styles.preOrderSummaryValue}>
+                    {scheduledFor ? formatPreOrderSlot(scheduledFor) : 'Pick a slot below'}
+                  </Text>
+                  <Text style={styles.preOrderSummaryHint}>
+                    You can schedule up to 7 days ahead. We&apos;ll validate it against live canteen timings.
+                  </Text>
+                </View>
+              </View>
+
+              {preOrderSuggestions.length > 0 ? (
+                <View style={styles.preOrderSuggestionWrap}>
+                  {preOrderSuggestions.map((suggestion) => {
+                    const active =
+                      scheduledFor && suggestion.value.getTime() === scheduledFor.getTime();
+
+                    return (
+                      <TouchableOpacity
+                        key={suggestion.id}
+                        activeOpacity={0.92}
+                        style={[
+                          styles.preOrderSuggestionChip,
+                          active && styles.preOrderSuggestionChipActive,
+                        ]}
+                        onPress={() => {
+                          setScheduledFor(new Date(suggestion.value));
+                          setErrorMessage('');
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.preOrderSuggestionLabel,
+                            active && styles.preOrderSuggestionLabelActive,
+                          ]}
+                        >
+                          {suggestion.label}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.preOrderSuggestionCaption,
+                            active && styles.preOrderSuggestionCaptionActive,
+                          ]}
+                        >
+                          {suggestion.caption}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : null}
+
               <View style={styles.dateTimePickerRow}>
-                <TouchableOpacity style={styles.dateTimeButton} onPress={() => setShowDatePicker(true)}>
+                <TouchableOpacity
+                  style={styles.dateTimeButton}
+                  onPress={() => setShowDatePicker(true)}
+                >
                   <AppIcon name="calendar" size={16} color={palette.brand} />
                   <Text style={styles.dateTimeButtonText}>
                     {scheduledFor ? scheduledFor.toLocaleDateString() : 'Select Date'}
                   </Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.dateTimeButton} onPress={() => setShowTimePicker(true)}>
+                <TouchableOpacity
+                  style={styles.dateTimeButton}
+                  onPress={() => setShowTimePicker(true)}
+                >
                   <AppIcon name="clock" size={16} color={palette.brand} />
                   <Text style={styles.dateTimeButtonText}>
                     {scheduledFor ? scheduledFor.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Select Time'}
@@ -376,16 +668,19 @@ export default function CartScreen() {
                 />
               )}
 
-              <Text style={[styles.noteLabel, { marginTop: 8 }]}>Pre-order Note</Text>
-              <TextInput
-                style={styles.noteInput}
-                value={preOrderNote}
-                onChangeText={setPreOrderNote}
-                placeholder="Any special instructions for later?"
-                placeholderTextColor={palette.subtle}
-                multiline
-                maxLength={200}
-              />
+              <View style={styles.noteCard}>
+                <Text style={styles.noteLabel}>Pre-order Note</Text>
+                <TextInput
+                  style={styles.noteInput}
+                  value={preOrderNote}
+                  onChangeText={setPreOrderNote}
+                  placeholder="Any timing note for later pickup, like after lab or before class?"
+                  placeholderTextColor={palette.subtle}
+                  multiline
+                  maxLength={200}
+                />
+                <Text style={styles.noteCounter}>{preOrderNote.length}/200</Text>
+              </View>
             </View>
           )}
         </View>
@@ -573,7 +868,9 @@ export default function CartScreen() {
             </View>
           ) : (
             <View style={styles.checkoutRow}>
-              <Text style={styles.checkoutButtonText}>Continue to Payment</Text>
+              <Text style={styles.checkoutButtonText}>
+                {checkoutNeedsPreOrder ? 'Schedule for Later' : 'Continue to Payment'}
+              </Text>
               <AppIcon name="chevron-right" size={18} color={palette.surface} />
             </View>
           )}
@@ -626,6 +923,68 @@ const styles = StyleSheet.create({
     gap: 14,
     ...shadows.card,
   },
+  closedNoticeCard: {
+    backgroundColor: palette.surfaceRaised,
+    borderWidth: 1,
+    borderColor: '#F3D8BD',
+  },
+  closedNoticeTopRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  closedNoticeIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: palette.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closedNoticeCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  closedNoticeTitle: {
+    color: palette.ink,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  closedNoticeText: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  closedNoticeHighlight: {
+    backgroundColor: palette.surface,
+    borderRadius: 18,
+    padding: 14,
+    gap: 5,
+  },
+  closedNoticeHighlightLabel: {
+    color: palette.brand,
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  closedNoticeHighlightValue: {
+    color: palette.ink,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  closedNoticeButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 16,
+    backgroundColor: palette.brand,
+  },
+  closedNoticeButtonText: {
+    color: palette.surface,
+    fontSize: 14,
+    fontWeight: '800',
+  },
   sectionTitle: {
     color: palette.ink,
     fontSize: 18,
@@ -644,6 +1003,76 @@ const styles = StyleSheet.create({
   preOrderControls: {
     marginTop: 6,
     gap: 12,
+  },
+  preOrderSummaryCard: {
+    backgroundColor: palette.surfaceRaised,
+    borderRadius: 20,
+    padding: 14,
+    gap: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  preOrderSummaryIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: palette.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  preOrderSummaryCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  preOrderSummaryEyebrow: {
+    color: palette.brand,
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  preOrderSummaryValue: {
+    color: palette.ink,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  preOrderSummaryHint: {
+    color: palette.muted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  preOrderSuggestionWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  preOrderSuggestionChip: {
+    flexGrow: 1,
+    minWidth: '47%',
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  preOrderSuggestionChipActive: {
+    backgroundColor: palette.brand,
+  },
+  preOrderSuggestionLabel: {
+    color: palette.ink,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  preOrderSuggestionLabelActive: {
+    color: palette.surface,
+  },
+  preOrderSuggestionCaption: {
+    color: palette.muted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  preOrderSuggestionCaptionActive: {
+    color: 'rgba(255,255,255,0.84)',
   },
   dateTimePickerRow: {
     flexDirection: 'row',

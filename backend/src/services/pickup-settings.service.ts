@@ -3,6 +3,7 @@ import { PickupSettings } from '../models/PickupSettings.js';
 import { RushHour } from '../models/RushHour.js';
 
 const TIME_PATTERN = /^\d{2}:\d{2}$/;
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
 type PickupSettingsRecord = {
   college: SupportedCollege;
@@ -28,10 +29,17 @@ export type PickupRuntimeSettings = PickupSettingsRecord & {
   currentTime: string;
 };
 
-function getCurrentTimeString(now = new Date()) {
-  const ISTOffset = 5.5 * 60 * 60 * 1000;
-  const IST = new Date(now.getTime() + ISTOffset);
+function getISTDate(now = new Date()) {
+  return new Date(now.getTime() + IST_OFFSET_MS);
+}
+
+export function getCurrentTimeString(now = new Date()) {
+  const IST = getISTDate(now);
   return `${String(IST.getUTCHours()).padStart(2, '0')}:${String(IST.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+export function getCurrentDayOfWeek(now = new Date()) {
+  return getISTDate(now).getUTCDay();
 }
 
 function timeToMinutes(value: string) {
@@ -53,6 +61,28 @@ function isWithinBreak(settings: PickupSettingsRecord, currentMinutes: number) {
   const breakStartMinutes = timeToMinutes(settings.breakStart);
   const breakEndMinutes = timeToMinutes(settings.breakEnd);
   return currentMinutes >= breakStartMinutes && currentMinutes < breakEndMinutes;
+}
+
+export function isWithinOperatingHours(
+  settings: PickupSettingsRecord,
+  now = new Date(),
+  options: { ignoreManualClosure?: boolean } = {},
+) {
+  const currentTime = getCurrentTimeString(now);
+  const currentMinutes = timeToMinutes(currentTime);
+  const openingMinutes = timeToMinutes(settings.openingTime);
+  const closingMinutes = timeToMinutes(settings.closingTime);
+
+  const withinConfiguredWindow =
+    currentMinutes >= openingMinutes &&
+    currentMinutes <= closingMinutes &&
+    !isWithinBreak(settings, currentMinutes);
+
+  if (options.ignoreManualClosure) {
+    return withinConfiguredWindow;
+  }
+
+  return settings.isOpen && withinConfiguredWindow;
 }
 
 function buildDefaultPickupSettings(college: SupportedCollege): PickupSettingsRecord {
@@ -103,22 +133,13 @@ export function toPickupRuntimeSettings(
   const resolvedCollege = resolveCollege(college);
   const config = getCollegePickupConfig(resolvedCollege);
   const currentTime = getCurrentTimeString(now);
-  const currentMinutes = timeToMinutes(currentTime);
-  const openingMinutes = timeToMinutes(settings.openingTime);
-  const closingMinutes = timeToMinutes(settings.closingTime);
-
-  const isCurrentlyOpen =
-    settings.isOpen &&
-    currentMinutes >= openingMinutes &&
-    currentMinutes <= closingMinutes &&
-    !isWithinBreak(settings, currentMinutes);
 
   return {
     ...settings,
     college: resolvedCollege,
     intervalMinutes: config.intervalMinutes,
     currentTime,
-    isCurrentlyOpen,
+    isCurrentlyOpen: isWithinOperatingHours(settings, now),
   };
 }
 
@@ -130,7 +151,7 @@ export async function getPickupRuntimeSettings(college: SupportedCollege, now = 
 
 export async function getActiveRushHour(college: SupportedCollege, now = new Date()) {
   const resolvedCollege = resolveCollege(college);
-  const currentDay = now.getDay();
+  const currentDay = getCurrentDayOfWeek(now);
   const currentTime = getCurrentTimeString(now);
 
   return RushHour.findOne({

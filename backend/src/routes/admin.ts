@@ -135,6 +135,12 @@ router.get(
           totalAmount: order.totalAmount,
           status: order.status,
           college: resolveCollege(order.college),
+          scheduledTime: order.scheduledTime,
+          isPreOrder: Boolean(order.isPreOrder),
+          scheduledFor: order.scheduledFor,
+          preOrderNote: order.preOrderNote || '',
+          estimatedPickupMinutes: order.estimatedPickupMinutes,
+          estimatedPickupAt: order.estimatedPickupAt,
           createdAt: order.createdAt,
         })),
       );
